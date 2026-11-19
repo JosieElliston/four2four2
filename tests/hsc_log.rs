@@ -35,13 +35,13 @@ fn rewritten_log_round_trips() {
 #[test]
 #[ignore]
 fn solver_solves_log_scramble() {
-    use four2four2::solver::{DEFAULT_DEPTH, Tables, solve};
+    use four2four2::solver::{Tables, solve};
     let tables = Tables::load_or_build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tables"));
     let mut state = State::solved();
     state.apply_all(&hsc::parse(LOG).unwrap().scramble);
-    let sol = solve(&tables, &state, DEFAULT_DEPTH);
+    let sol = solve(&tables, &state, None);
     state.apply_all(&sol.twists());
     assert!(state.is_solved());
-    // each phase is at most its table's maximum depth
-    assert!(sol.phase1.len() <= 10 && sol.phase2.len() <= 21);
+    // the optimal length, as the search proved when this was written
+    assert_eq!(twist::hsc_stm(&sol.twists()), 14);
 }

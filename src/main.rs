@@ -41,10 +41,10 @@ enum Command {
 
 #[derive(clap::Args)]
 struct SearchArgs {
-    /// Try phase 1 solutions up to this many twists longer than optimal.
-    /// Each step costs about 10x the time.
-    #[arg(long, default_value_t = solver::DEFAULT_DEPTH)]
-    depth: u8,
+    /// Try phase 1 solutions up to this many twists longer than optimal,
+    /// instead of searching until the solution is optimal.
+    #[arg(long)]
+    depth: Option<u8>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,9 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sol = solver::solve(&tables, &state, search.depth);
             let twists = sol.twists();
             eprintln!(
-                "stm {}{} ({} + {}, target {}) in {:.1?}",
+                "stm {} ({} + {}, target {}) in {:.1?}",
                 hsc_stm(&twists),
-                if sol.optimal { " (optimal)" } else { "" },
                 sol.phase1.len(),
                 sol.phase2.len(),
                 sol.target,

@@ -2,72 +2,45 @@
 
 this is a two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle.
 
-## method
+![solved](assets/solved.png)
 
-images from [hsc2](https://github.com/hactarCE/Hyperspeedcube/), with the pink pieces highlighted.
+images from [hsc2](https://github.com/hactarCE/Hyperspeedcube/).
+
+for pedagogy, i use the standard 3^4 [notation](https://hypercubing.xyz/notation/), color scheme, and orientation (red on `R`, orange on `L`, white on `U`, yellow on `D`, green on `F`, blue on `B`, pink on `O`, purple on `I`). note that the solver uses a different orientation and notation internally, the same as hsc2.
+
+the {4}x{4} duoprism has two rings of square prisms: `R`/`F`/`L`/`B` and `U`/`I`/`D`/`O`.
+
+# method
+
+the purple pieces are hidden.
+
+## human
 
 when scrambled, it looks like ![scrambled](assets/0_scrambled.png)
 
-the human method has four steps. first we solve the pink outer `O` cell intuitively: ![f2l](assets/1_f2l.png)
+the human method has four steps. first we solve the pink outer `O` stickers intuitively: ![f2l](assets/1_f2l.png)
 
 then we orient the purple inner `I` cell with some short algorithms (variants of sune): ![oll](assets/2_oll.png)
 
-then we separate the white/yellow `U`/`D` cells with some triggers (variants of `RO2 I* RO2`): ![separation](assets/3_separation.png)
+then we separate the white/yellow `U`/`D` cells with some triggers (actually we solve this in two steps, first separating white/yellow `O` pieces, then use variants of `RO2 I* RO2` to separate white/yellow `I` pieces while preserving `O` separation): ![separation](assets/3_separation.png)
 
 then we solve the rest of the puzzle, using PLB algorithms and `I*` twists: ![solved](assets/4_solved.png)
 
-the computer method goes from scrambled to oll (`I` on `I`, `O` on `O`, `U`/`D` on `U`/`D`) to solved.
+## computer
 
-## sizes
+the computer method instead uses just two phases: phase 1 goes from scrambled to oll (`I` on `I`, `O` on `O`, `U`/`D` on `U`/`D`), and phase 2 goes from oll to solved.
 
-these counts are with one piece fixed.
+we hold the all-positive piece (the corner on `εA εB ηA ηB`) fixed, and only twist the four negative cells `εC`, `εD`, `ηC`, `ηD`, for `4 * (8-1) = 28` non-identity twists.
 
 - whole puzzle: 15!·2¹³ ≈ 1.07e16 positions.
 - phase 1, scrambled → oll: 105,431,040 cosets. this can be solved in at most 10 STM.
-- phase 2, oll → solved: 7!·8!/2 = 101,606,400 positions. we use the reduced moveset that preserves phase 1. this can be solved in at most 21 STM.
+- phase 2, oll → solved: 7!·8!/2 = 101,606,400 positions. we use the reduced moveset of 12 twists that preserve oll. this can be solved in at most 21 STM with the reduced moveset.
 
-oll has 4 symmetric variants: which ring, and whether to separate I/O or U/D.
+100k is small enough to store the complete depth lookuptables for each state.
 
-## tables
+we also consider the four symmetries of oll: which ring, and whether to separate I/O or U/D.
 
-we hold the all-positive piece fixed, and only use twists of the four negative cells: `εC`, `εD`, `ηC`, `ηD`.
-
-TODO: what is an O-type piece: a piece with a pink sticker.
-
-Phase 1 coordinate: which slots hold O-type pieces (C(15,8) = 6435 possibilities) × which side of each slot's η stickers faces z (2¹⁵). That's 211M entries, of which half (105M) are reachable.
-
-Phase 2 coordinate: the permutation of the 7 remaining z+ pieces × the permutation of the 8 z− pieces. That's 203M entries, of which half are reachable.
-
-Solving: for each of the 4 symmetric oll targets, search every phase 1 solution up to `--depth` twists longer than optimal (default 2), pruned exactly by the phase 1 table. Track where the pieces go along the way, so each finished phase 1 costs one phase 2 lookup. Keep the shortest total, then step down the phase 2 table.
-
-
-Phase 1: which slots hold O-type pieces, plus one η-orientation bit per slot.
-
-Phase 2: the permutation of the 7 remaining z+ pieces and the 8 z− pieces.
-
-There's no symmetry reduction or parity packing, so half of each table is never reached.
-
-
-the phase 1 table takes 8 s to build and 211 MB of memory and disk.
-
-the phase 2 table takes 10 s to build and 203 MB of memory and disk.
-
-
-What the tables are keyed by
-Everything is in a frame where slot 0, the all-positive corner (εA εB ηA ηB), always holds its own piece. Only twists of εC, εD, ηC and ηD are used (28 in total).
-
-O-type piece: a piece whose home is on the O cell (ηC, z = −1). There are 8 O-type and 8 I-type pieces. Piece 0 is I-type, so 8 O-type pieces are spread over the other 15 slots.
-Phase-1 key: rank(O-mask) · 2¹⁵ + ori-mask. Only half of the 211M entries are reachable.
-O-mask: which of slots 1–15 hold an O-type piece. It has 8 bits set, ranked into 0..6435.
-ori-mask: for each of slots 1–15, whether the sticker facing that slot's z axis is a U/D sticker (it should be an I/O one).
-Target: no orientation bits set, and O-type pieces exactly in the slots with z = −1.
-Phase-2 key: rank(perm of the 7 pieces in z+ slots other than slot 0) · 8! + rank(perm of the 8 pieces in z− slots). Both ranks are standard Lehmer codes.
-Orientation isn't stored, because once oll holds it follows from the permutation.
-Half of the 203M entries are reachable (even permutations only).
-Both tables: one byte per entry holding the exact distance, built by breadth-first search.
-
-Phase 1 will store distance mod 3 in 2 bits, cutting that table to 26 MB, and phase 2 will cap the distance at 15 in 4 bits for 51 MB, with a small IDA* fallback for the rare values at or above 15.
-Phase 2 will use a mod-3 approach instead, so it avoids capped values and the fallback; leaf checks step downhill a few times, which is affordable since leaves are rare, and both tables shrink to about 26 MB. I'm implementing that now.
+# algorithm
 
 ## depth = 0 search
 
@@ -81,13 +54,13 @@ with this alg, phase 1 takes 8.12 STM, phase 2 takes 11.83 STM, adn the total so
 
 ## cross phase search
 
-this is an extention to depth = 0 search which finds optimal solutinos.
+this is an extension to depth = 0 search which can find optimal solutions.
 
 instead of only considering the optimal child, we also have some additional depth for the phase 1, allowing solutions for phase 1 that are up to that slack worse, in hopes for a better phase 2.
 
 ## more pruning
 
-that makes each higher depth takes about `NUM_TWISTS = 28` slower, so we need more pruning.
+each higher depth takes about `NUM_TWISTS = 28` slower, so we need more pruning.
 
 the insight is that a full solution must simultaneously solve all four symmetric oll targets.
 
@@ -95,16 +68,53 @@ this implies that a bound on the full solution is `depth so far + max over targe
 
 ## runtime
 
-finally, this is fast enough for an optimal solver. (this chart is kinda funny bc we stop exploring depth once it no longer helps)
+finally, this is fast enough for an optimal solver. (the runtime in this chart is a bit funny bc a solve stops once every oll target's phase 1 budget reaches the best full solution found, so a depth 3 solve might have terminated at depth 2)
 
 | `--depth` | phase 1 STM | phase 2 STM | total STM | range | time |
 |---|---|---|---|---|---|
 | 0 | 8.12 | 11.83 | 19.95 | 14–24 | 0.36 ms |
-| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 8.6 ms |
-| 2 (default) | 9.93 | 6.21 | 16.14 | 12–20 | 118 ms |
-| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 0.99 s |
+| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 7.5 ms |
+| 2 | 9.93 | 6.21 | 16.14 | 12–20 | 105 ms |
+| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 0.79 s |
+| optimal | 12.07 | 1.73 | 13.80 | 12–15 | 7.9 s |
 
-## usage
+# tables
+
+the 16 slots are the points of {±1}⁴, with x, y on the ε ring and z, w on the η ring. a slot's index has bit i set when its coordinate i is −1, so slot 0 is the fixed piece.
+
+an O-type piece is one with a pink `O` sticker.
+
+## phase 1: scrambled → oll
+
+the key is `rank(O-mask) · 2¹⁴ + ori-mask`:
+
+- O-mask: which of slots 1–15 hold an O-type piece. it has 8 of 15 bits set, ranked into 0..6435.
+- ori-mask: for each of slots 1–14, whether the sticker on the slot's z axis is a U/D sticker instead of an I/O one. slot 15's bit is left out: reachable positions always have an even number of these bits, so it's implied.
+- distance 0 is no orientation bits, with the O-type pieces exactly in the z = −1 slots.
+
+that's 6435 · 2¹⁴ = 105,431,040 entries, all reachable.
+
+in the search, the coordinate is both masks, indexed by slot, packed into one `u32`. a twist moves its cell's 8 slots by a signed permutation of the axes, which on slot indices is an xor and a permutation of index bits. each of those is one delta swap on a slot mask, so every twist is 2 delta swaps (plus an xor of the ori-mask when z and w trade places). twisting needs no move table, and one swap moves both masks.
+
+each entry is the distance mod 3, in 2 bits, for 26 MB. that's enough because the search always knows the parent's exact distance, and a child's differs from it by at most 1.
+
+## phase 2: oll → solved
+
+the key is `rank(z+ perm) · 8!/2 + rank(z− perm) / 2`:
+
+- z+ perm: the 7 pieces in the z+ slots other than slot 0. z− perm: the 8 pieces in the z− slots. both ranks are Lehmer codes.
+- orientation isn't stored, since in oll it follows from the permutation.
+- only even permutations are reachable, so the z− perm's parity follows from the z+ perm's, and halving the z− rank (dropping its last Lehmer digit) loses nothing.
+
+that's 5040 · 20160 = 101,606,400 entries, all reachable.
+
+the search tracks where the pieces go during phase 1, so it can form this key at the end of each phase 1. there's no parent distance to go on there, but the lookup only has to tell whether phase 2 beats the best total so far. so each entry is 4 bits: distances below 13 exactly, and 13 and up as 13 + (d mod 3), for 51 MB. the cutoff is almost always under 13, so one lookup decides. otherwise (early on, before a good total is found) the solver steps downhill through the mod-3 values until it reaches exact ones.
+
+## building
+
+both tables are built by a parallel breadth-first search with a byte per entry, then packed and cached in `tables/`. phase 1 takes 8 s and phase 2 takes 11 s.
+
+# usage
 
 ```sh
 cargo run -r -- solve in.hsc out.hsc   # solve a log's scramble, write the solution as a log
@@ -115,7 +125,7 @@ cargo test -r -- --ignored             # also solves its scramble (needs the tab
 
 logs are read for their literal scramble twists; scrambles given only by seed are rejected. stm is counted the way hsc2 counts it (runs of consecutive twists on the same cell), which matches the `stmN` in hsc2's log filenames.
 
-## ref
+# ref
 
 - [flat hypercube](https://github.com/milojacquet/flat-hypercube)
 - [robodoan](https://github.com/HactarCE/robodoan)

@@ -175,8 +175,6 @@ pub struct Solution {
     pub target: usize,
     /// Search nodes visited.
     pub nodes: u64,
-    /// Whether the search proved no shorter solution exists.
-    pub optimal: bool,
 }
 
 impl Solution {
@@ -185,9 +183,6 @@ impl Solution {
         simplify(&[self.phase1.clone(), self.phase2.clone()].concat())
     }
 }
-
-/// Default for how many twists past optimal phase 1 to search.
-pub const DEFAULT_DEPTH: u8 = 2;
 
 /// Best phase 1 found so far, in the normalized frame.
 struct Best {
@@ -311,9 +306,10 @@ impl Search<'_> {
 }
 
 /// Solves `state`, trying every phase 1 up to `depth` twists longer than
-/// optimal for each oll target, and keeping the shortest total. Twists in the
-/// result are in the frame of `state`.
-pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
+/// optimal for each oll target, and keeping the shortest total. With no
+/// `depth`, searches until the total is optimal. Twists in the result are in
+/// the frame of `state`.
+pub fn solve(tables: &Tables, state: &State, depth: Option<u8>) -> Solution {
     let frames = &*FRAMES;
     // rotate piece 0 home; the search works in that frame
     let rot = coord::normalizing_rotation(state);
@@ -329,15 +325,13 @@ pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
         nodes: 0,
     };
     // shortest phase 1 lengths first, so good totals prune the longer rounds
-    let mut optimal = false;
-    for extra in 0..=depth {
-        search.budget = d.map(|x| x + extra);
+    for extra in 0..=depth.unwrap_or(u8::MAX) {
+        search.budget = d.map(|x| x.saturating_add(extra));
         // A round only finds totals of at least its smallest budget. Once
         // that reaches the best total, no longer phase 1 can help, and since
         // solved is in every target, every solution shorter than the best
         // would have been found as a phase 1 alone: the best is optimal.
         if search.budget.iter().all(|&b| b as usize >= search.bound()) {
-            optimal = true;
             break;
         }
         search.dfs(c, d, P2::from_state(&s));
@@ -361,6 +355,5 @@ pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
         phase2: to_original(&phase2),
         target: k,
         nodes: search.nodes,
-        optimal,
     }
 }
