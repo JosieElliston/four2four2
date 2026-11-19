@@ -25,7 +25,7 @@ pub struct SlotMove {
 }
 
 impl SlotMove {
-    fn new(twist: Twist) -> Self {
+    pub fn new(twist: Twist) -> Self {
         let (cell, rot) = (twist.cell(), twist.rot());
         let perm = std::array::from_fn(|p| {
             if (p >> cell.axis() & 1 == 1) == cell.is_negative() {

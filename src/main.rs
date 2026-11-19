@@ -21,7 +21,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Solve the scramble of an HSC2 log and write the solution as a new log.
-    Solve { input: PathBuf, output: PathBuf },
+    Solve {
+        input: PathBuf,
+        output: PathBuf,
+        #[command(flatten)]
+        search: SearchArgs,
+    },
     /// Solve random scrambles. Prints `stm phase1 phase2` per scramble.
     Bench {
         /// Number of scrambles.
@@ -29,10 +34,33 @@ enum Command {
         n: usize,
         #[arg(long, default_value_t = 0)]
         seed: u64,
-        /// How many of the 4 oll targets to try (for ablation).
-        #[arg(long, default_value_t = 4)]
-        targets: usize,
+        #[command(flatten)]
+        search: SearchArgs,
     },
+}
+
+#[derive(clap::Args)]
+struct SearchArgs {
+    /// Only target the I/O separation in the η ring, instead of trying all 4
+    /// symmetric oll targets (either ring, either axis).
+    #[arg(long)]
+    no_symmetries: bool,
+    /// Try phase 1 solutions up to this many twists longer than optimal.
+    #[arg(long, default_value_t = 2, conflicts_with = "greedy")]
+    depth: u8,
+    /// Take the first optimal phase 1 and don't search further. Cheaper and
+    /// worse than `--depth 0`, which tries every optimal phase 1.
+    #[arg(long)]
+    greedy: bool,
+}
+
+impl SearchArgs {
+    fn options(&self) -> solver::Options {
+        solver::Options {
+            symmetries: !self.no_symmetries,
+            depth: (!self.greedy).then_some(self.depth),
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,14 +70,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("tables ready in {:.1?}", t0.elapsed());
 
     match cli.command {
-        Command::Solve { input, output } => {
+        Command::Solve {
+            input,
+            output,
+            search,
+        } => {
             let text = std::fs::read_to_string(&input)?;
             let scramble = hsc::parse(&text)?.scramble;
             let mut state = State::solved();
             state.apply_all(&scramble);
 
             let t0 = Instant::now();
-            let sol = solver::solve(&tables, &state);
+            let sol = solver::solve(&tables, &state, search.options());
             let twists = sol.twists();
             eprintln!(
                 "stm {} ({} + {}, target {}) in {:.1?}",
@@ -63,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             assert!(state.is_solved(), "solution doesn't solve the scramble");
             std::fs::write(output, hsc::write(&scramble, &twists))?;
         }
-        Command::Bench { n, seed, targets } => {
+        Command::Bench { n, seed, search } => {
             let all = Twist::all();
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let t0 = Instant::now();
@@ -73,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for _ in 0..1000 {
                     state.apply(all[rng.random_range(0..all.len())]);
                 }
-                let sol = solver::solve_with_targets(&tables, &state, targets);
+                let sol = solver::solve(&tables, &state, search.options());
                 state.apply_all(&sol.twists());
                 assert!(state.is_solved());
                 let stm = hsc_stm(&sol.twists());

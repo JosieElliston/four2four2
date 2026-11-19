@@ -95,65 +95,160 @@ impl Solution {
     }
 }
 
-/// Solves via one oll target. Twists are in the frame of `state`.
-pub fn solve_with_target(tables: &Tables, state: &State, sym: Rot) -> (Vec<Twist>, Vec<Twist>) {
-    // relabel so the target is the z-sorted one, then rotate piece 0 home
-    let s = state.conjugated(sym);
-    let r = coord::normalizing_rotation(&s);
-    let mut s = s.rotated(r);
+/// How hard to search.
+#[derive(Copy, Clone, Debug)]
+pub struct Options {
+    /// Try all of [`target_symmetries`], or only the first.
+    pub symmetries: bool,
+    /// `None`: take the first optimal phase 1, then optimal phase 2.
+    /// `Some(k)`: try every phase 1 up to `k` twists longer than optimal and
+    /// keep the shortest total.
+    pub depth: Option<u8>,
+}
 
-    let p1 = descend(
-        &tables.p1,
-        &PHASE1_MOVES,
-        P1::from_state(&s),
-        P1::index,
-        P1::apply,
-    );
-    s.apply_all(&p1);
-    let p2 = descend(
-        &tables.p2,
-        &PHASE2_MOVES,
-        P2::from_state(&s),
-        P2::index,
-        P2::apply,
-    );
-    s.apply_all(&p2);
-    assert_eq!(
-        s,
-        State::solved(),
-        "phase 2 didn't solve the normalized state"
-    );
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            symmetries: true,
+            depth: Some(2),
+        }
+    }
+}
 
-    // back to the original frame: undo the rotation, then the relabeling
-    let back = r.inverse();
-    let undo = |ts: Vec<Twist>| -> Vec<Twist> {
-        ts.into_iter()
-            .map(|t| t.conjugated(back).conjugated(sym.inverse()))
+/// The frame a target is solved in: relabel by `sym` so the target is the
+/// z-sorted one, then rotate by `rot` so piece 0 is home.
+struct Frame {
+    sym: Rot,
+    rot: Rot,
+}
+
+impl Frame {
+    fn new(state: &State, sym: Rot) -> (Self, State) {
+        let s = state.conjugated(sym);
+        let rot = coord::normalizing_rotation(&s);
+        (Frame { sym, rot }, s.rotated(rot))
+    }
+
+    /// Maps twists in this frame back to the original one.
+    fn to_original(&self, ts: &[Twist]) -> Vec<Twist> {
+        let (back, unsym) = (self.rot.inverse(), self.sym.inverse());
+        ts.iter()
+            .map(|t| t.conjugated(back).conjugated(unsym))
             .collect()
-    };
-    (undo(p1), undo(p2))
+    }
 }
 
-/// Tries every oll target and keeps the shortest total.
-pub fn solve(tables: &Tables, state: &State) -> Solution {
-    solve_with_targets(tables, state, target_symmetries().len())
+/// Best phase 1 found so far, in a normalized frame.
+struct Best {
+    total: usize,
+    target: usize,
+    phase1: Vec<Twist>,
+    p2: P2,
 }
 
-/// Tries the first `n_targets` of [`target_symmetries`] and keeps the
-/// shortest total.
-pub fn solve_with_targets(tables: &Tables, state: &State, n_targets: usize) -> Solution {
-    target_symmetries()
+/// Depth-first search over phase 1 paths of exactly `remaining` more twists,
+/// pruned by the exact phase 1 table. At the end of each path, the phase 2
+/// table gives the rest of the length.
+#[allow(clippy::too_many_arguments)]
+fn search_phase1(
+    tables: &Tables,
+    c1: P1,
+    c2: P2,
+    remaining: u8,
+    path: &mut Vec<Twist>,
+    target: usize,
+    best: &mut Option<Best>,
+) {
+    if remaining == 0 {
+        let d2 = tables.p2[c2.index()];
+        debug_assert_ne!(d2, UNREACHED);
+        let total = path.len() + d2 as usize;
+        if best.as_ref().is_none_or(|b| total < b.total) {
+            *best = Some(Best {
+                total,
+                target,
+                phase1: path.clone(),
+                p2: c2,
+            });
+        }
+        return;
+    }
+    for m in PHASE1_MOVES.iter() {
+        // two twists of one cell are one twist, which is tried on its own
+        if path.last().is_some_and(|t| t.cell() == m.twist.cell()) {
+            continue;
+        }
+        let n1 = c1.apply(m);
+        if tables.p1[n1.index()] > remaining - 1 {
+            continue;
+        }
+        path.push(m.twist);
+        search_phase1(tables, n1, c2.apply(m), remaining - 1, path, target, best);
+        path.pop();
+    }
+}
+
+/// Solves `state`. Twists in the result are in the frame of `state`.
+pub fn solve(tables: &Tables, state: &State, opts: Options) -> Solution {
+    let frames: Vec<(Frame, State)> = target_symmetries()
         .into_iter()
-        .take(n_targets.max(1))
-        .enumerate()
-        .map(|(k, sym)| {
-            let (phase1, phase2) = solve_with_target(tables, state, sym);
-            Solution {
-                phase1,
-                phase2,
-                target: k,
-            }
+        .take(if opts.symmetries { 4 } else { 1 })
+        .map(|sym| Frame::new(state, sym))
+        .collect();
+
+    let starts: Vec<(P1, P2, u8)> = frames
+        .iter()
+        .map(|(_, s)| {
+            let c1 = P1::from_state(s);
+            (c1, P2::from_state(s), tables.p1[c1.index()])
         })
-        .min_by_key(|s| s.twists().len())
-        .unwrap()
+        .collect();
+
+    // greedy: first optimal phase 1, then phase 2. also seeds the bound for
+    // the search below.
+    let mut best: Option<Best> = None;
+    for (target, &(c1, c2, _)) in starts.iter().enumerate() {
+        let phase1 = descend(&tables.p1, &PHASE1_MOVES, c1, P1::index, P1::apply);
+        let p2 = phase1
+            .iter()
+            .fold(c2, |c, t| c.apply(&coord::SlotMove::new(*t)));
+        let total = phase1.len() + tables.p2[p2.index()] as usize;
+        if best.as_ref().is_none_or(|b| total < b.total) {
+            best = Some(Best {
+                total,
+                target,
+                phase1,
+                p2,
+            });
+        }
+    }
+
+    // every phase 1 of each length, shortest lengths first across all targets
+    // so a good total found on one target cuts off long searches on the rest
+    if let Some(depth) = opts.depth {
+        for extra in 0..=depth {
+            for (target, &(c1, c2, d1)) in starts.iter().enumerate() {
+                let len = d1 + extra;
+                // phase 2 can't be negative, so this length can't win
+                if best.as_ref().is_some_and(|b| len as usize >= b.total) {
+                    continue;
+                }
+                let mut path = vec![];
+                search_phase1(tables, c1, c2, len, &mut path, target, &mut best);
+            }
+        }
+    }
+
+    let best = best.expect("no solution found");
+    let phase2 = descend(&tables.p2, &PHASE2_MOVES, best.p2, P2::index, P2::apply);
+    let (frame, s) = &frames[best.target];
+    let mut check = s.clone();
+    check.apply_all(&best.phase1);
+    check.apply_all(&phase2);
+    assert_eq!(check, State::solved(), "didn't solve the normalized state");
+    Solution {
+        phase1: frame.to_original(&best.phase1),
+        phase2: frame.to_original(&phase2),
+        target: best.target,
+    }
 }
