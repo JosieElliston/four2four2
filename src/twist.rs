@@ -121,6 +121,14 @@ impl Twist {
         }
     }
 
+    /// The twist `r * self * r⁻¹`: the same twist seen in a frame moved by
+    /// `r`. Twisting a state's `rotated(r)` or `conjugated(r)` by
+    /// `t.conjugated(r)` matches twisting the original by `t`.
+    pub fn conjugated(self, r: Rot) -> Self {
+        let rot = r.then_after(self.rot).then_after(r.inverse());
+        Twist::new(r.apply_cell(self.cell), rot).expect("symmetry must map twists to twists")
+    }
+
     /// The combined twist of doing `self` then `other` on the same cell, or
     /// `None` if they cancel. Panics if the cells differ.
     pub fn then(self, other: Twist) -> Option<Twist> {

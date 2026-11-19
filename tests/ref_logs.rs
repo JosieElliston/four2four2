@@ -72,3 +72,22 @@ fn min_log_parses() {
     state.apply_all(&solve.solution);
     assert!(state.is_solved());
 }
+
+/// Builds (or loads) the full tables, so it's slow the first time and needs
+/// ~420 MB. Run with `cargo test --release -- --ignored`.
+#[test]
+#[ignore]
+fn solver_solves_ref_scrambles() {
+    use four2four2::solver::{Tables, solve};
+    let tables = Tables::load_or_build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tables"));
+    for path in logs() {
+        let solve_log = hsc::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut state = State::solved();
+        state.apply_all(&solve_log.scramble);
+        let sol = solve(&tables, &state);
+        state.apply_all(&sol.twists());
+        assert!(state.is_solved(), "{}", path.display());
+        // each phase is at most its table's maximum depth
+        assert!(sol.phase1.len() <= 10 && sol.phase2.len() <= 21);
+    }
+}
