@@ -5,69 +5,129 @@
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::coord::{self, P1, P1Move, P2, PHASE1_MOVES, PHASE2_MOVES, SlotMove};
+use crate::coord::{self, Coord, P1, P1Move, P2, PHASE1_MOVES, PHASE2_MOVES, SlotMove};
 use crate::geom::Rot;
 use crate::state::State;
-use crate::table::{self, UNREACHED};
+use crate::table::{self, Mod3, Nibbles, child_distances};
 use crate::twist::{Twist, simplify};
 
 pub struct Tables {
-    p1: Vec<u8>,
-    p2: Vec<u8>,
+    p1: Mod3,
+    p2: Nibbles,
+}
+
+/// Builds a table of exact distances by BFS from distance 0.
+fn bfs<C: Coord>(name: &str, size: usize, moves: &[SlotMove]) -> Vec<u8> {
+    table::bfs(name, size, C::solved().index(), |i, f| {
+        let c = C::from_index(i);
+        for m in moves {
+            f(c.apply(m).index());
+        }
+    })
 }
 
 impl Tables {
     /// Loads the tables from `dir`, building and caching any that are missing.
     pub fn load_or_build(dir: &Path) -> Self {
-        let p1 = table::load_or_build(&dir.join("phase1.bin"), coord::P1_SIZE, || {
-            table::bfs("phase 1", coord::P1_SIZE, P1::solved().index(), |i, f| {
-                let c = P1::from_index(i);
-                for m in PHASE1_MOVES.iter() {
-                    f(c.apply(m).index());
-                }
-            })
-        });
-        let p2 = table::load_or_build(&dir.join("phase2.bin"), coord::P2_SIZE, || {
-            table::bfs("phase 2", coord::P2_SIZE, P2::solved().index(), |i, f| {
-                let c = P2::from_index(i);
-                for m in PHASE2_MOVES.iter() {
-                    f(c.apply(m).index());
-                }
-            })
-        });
+        let p1 = table::load_or_build(
+            &dir.join("phase1-mod3.bin"),
+            Mod3::packed_len(coord::P1_SIZE),
+            || {
+                Mod3::pack(&bfs::<P1>("phase 1", coord::P1_SIZE, &PHASE1_MOVES))
+                    .bytes()
+                    .to_vec()
+            },
+        );
+        let p2 = table::load_or_build(
+            &dir.join("phase2-nibbles.bin"),
+            Nibbles::packed_len(coord::P2_SIZE),
+            || {
+                Nibbles::pack(&bfs::<P2>("phase 2", coord::P2_SIZE, &PHASE2_MOVES))
+                    .bytes()
+                    .to_vec()
+            },
+        );
+        let (p1, p2) = (Mod3::from_bytes(p1), Nibbles::from_bytes(p2));
         Tables { p1, p2 }
-    }
-
-    pub fn p1(&self) -> &[u8] {
-        &self.p1
-    }
-    pub fn p2(&self) -> &[u8] {
-        &self.p2
     }
 }
 
-/// Follows the table downhill to distance 0.
-fn descend<C: Copy>(
-    table: &[u8],
+/// One step downhill from `c`: the first move whose result's table entry
+/// satisfies `is_down`. Every neighbor is loaded at once so the loads overlap.
+fn downhill<C: Coord>(
     moves: &[SlotMove],
-    mut c: C,
-    index: impl Fn(C) -> usize,
-    apply: impl Fn(C, &SlotMove) -> C,
-) -> Vec<Twist> {
-    let mut d = table[index(c)];
-    assert_ne!(d, UNREACHED, "position not reachable in this phase");
-    let mut out = vec![];
-    while d > 0 {
-        let (m, next) = moves
-            .iter()
-            .map(|m| (m, apply(c, m)))
-            .find(|&(_, n)| table[index(n)] == d - 1)
-            .expect("table has no downhill move");
-        out.push(m.twist);
-        c = next;
-        d -= 1;
+    c: C,
+    entry: impl Fn(usize) -> u8,
+    is_down: impl Fn(u8) -> bool,
+) -> (usize, C) {
+    let mut next = [(c, 0); 28];
+    for (j, m) in moves.iter().enumerate() {
+        let n = c.apply(m);
+        next[j] = (n, n.index());
     }
-    out
+    let mut code = [0; 28];
+    for j in 0..moves.len() {
+        code[j] = entry(next[j].1);
+    }
+    let j = (0..moves.len())
+        .find(|&j| is_down(code[j]))
+        .expect("table has no downhill move");
+    (j, next[j].0)
+}
+
+/// Exact phase 1 distance of `c`.
+fn p1_distance(tables: &Tables, mut c: P1) -> u8 {
+    let (t, goal) = (&tables.p1, P1::solved().index());
+    let mut steps = 0;
+    while c.index() != goal {
+        // one less mod 3
+        let down = (t.get(c.index()) + 2) % 3;
+        c = downhill(&PHASE1_MOVES, c, |i| t.get(i), |v| v == down).1;
+        steps += 1;
+    }
+    steps
+}
+
+/// Phase 2 distance of `c` if it's at most `max`. With `path`, also steps
+/// all the way down, pushing each move.
+fn p2_distance(
+    tables: &Tables,
+    mut c: P2,
+    max: usize,
+    mut path: Option<&mut Vec<Twist>>,
+) -> Option<usize> {
+    let t = &tables.p2;
+    let exact = Nibbles::EXACT as usize;
+    let mut steps = 0;
+    loop {
+        let code = t.get(c.index());
+        if (code as usize) < exact {
+            let d = steps + code as usize;
+            if d > max {
+                return None;
+            }
+            if path.is_none() {
+                return Some(d);
+            }
+            if code == 0 {
+                return Some(d);
+            }
+        } else if steps + exact > max {
+            // still at least `exact` to go
+            return None;
+        }
+        let (j, n) = downhill(
+            &PHASE2_MOVES,
+            c,
+            |i| t.get(i),
+            |v| Nibbles::is_downhill(code, v),
+        );
+        if let Some(p) = path.as_deref_mut() {
+            p.push(PHASE2_MOVES[j].twist);
+        }
+        c = n;
+        steps += 1;
+    }
 }
 
 /// Symmetries that fix slot 0 (so they keep piece 0 home) and move each of
@@ -161,8 +221,12 @@ impl Search<'_> {
             pieces[slot[p] as usize] = slot[p2.pieces[p] as usize];
         }
         let p2k = P2 { pieces };
-        let total = self.path.len() + self.tables.p2[p2k.index()] as usize;
-        if total < self.bound() {
+        // only a phase 2 shorter than this helps
+        let Some(limit) = self.bound().checked_sub(self.path.len() + 1) else {
+            return;
+        };
+        if let Some(n) = p2_distance(self.tables, p2k, limit, None) {
+            let total = self.path.len() + n;
             self.best = Some(Best {
                 total,
                 target: k,
@@ -176,12 +240,18 @@ impl Search<'_> {
     /// `skip` (a range of [`PHASE1_MOVES`]). The search is bound by these
     /// loads, so they're issued with no branches on them, letting them overlap.
     #[cfg_attr(feature = "profiling", inline(never))]
-    fn expand(&self, c: &[P1; 4], skip: std::ops::Range<usize>) -> ([[P1; 4]; 28], [[u8; 4]; 28]) {
+    fn expand(
+        &self,
+        c: &[P1; 4],
+        d: &[u8; 4],
+        skip: std::ops::Range<usize>,
+    ) -> ([[P1; 4]; 28], [[u8; 4]; 28]) {
         let moves = &FRAMES.moves;
-        let p1 = &self.tables.p1[..];
+        let p1 = &self.tables.p1;
         let mut cc = [[P1::solved(); 4]; 28];
         let mut dd = [[0u8; 4]; 28];
         let kids = (0..28).filter(|i| !skip.contains(i));
+        let decode = d.map(child_distances);
         for i in kids.clone() {
             for k in 0..4 {
                 cc[i][k] = c[k].apply_p1(&moves[i][k]);
@@ -189,7 +259,7 @@ impl Search<'_> {
         }
         for i in kids {
             for k in 0..4 {
-                dd[i][k] = p1[cc[i][k].index()];
+                dd[i][k] = decode[k][p1.get(cc[i][k].index()) as usize];
             }
         }
         (cc, dd)
@@ -218,7 +288,7 @@ impl Search<'_> {
                 .unwrap();
             s..s + 7
         });
-        let (cc, dd) = self.expand(&c, skip.clone());
+        let (cc, dd) = self.expand(&c, &d, skip.clone());
         for (i, m) in PHASE1_MOVES.iter().enumerate() {
             if skip.contains(&i) {
                 continue;
@@ -249,7 +319,7 @@ pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
     let rot = coord::normalizing_rotation(state);
     let s = state.rotated(rot);
     let c: [P1; 4] = std::array::from_fn(|k| P1::from_state(&s.conjugated(frames.syms[k])));
-    let d: [u8; 4] = std::array::from_fn(|k| tables.p1[c[k].index()]);
+    let d: [u8; 4] = c.map(|c| p1_distance(tables, c));
 
     let mut search = Search {
         tables,
@@ -276,10 +346,9 @@ pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
     let best = search.best.expect("no solution found");
     let k = best.target;
     let unsym = frames.syms[k].inverse();
-    let phase2: Vec<Twist> = descend(&tables.p2, &PHASE2_MOVES, best.p2, P2::index, P2::apply)
-        .into_iter()
-        .map(|t| t.conjugated(unsym))
-        .collect();
+    let mut phase2 = vec![];
+    p2_distance(tables, best.p2, usize::MAX, Some(&mut phase2));
+    let phase2: Vec<Twist> = phase2.into_iter().map(|t| t.conjugated(unsym)).collect();
     let mut check = s.clone();
     check.apply_all(&best.phase1);
     check.apply_all(&phase2);

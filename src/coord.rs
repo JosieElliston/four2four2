@@ -92,12 +92,45 @@ pub fn normalizing_rotation(s: &State) -> Rot {
     r
 }
 
+/// A phase's coordinate: what its table is indexed by.
+pub trait Coord: Copy {
+    /// Distance 0.
+    fn solved() -> Self;
+    fn index(self) -> usize;
+    fn from_index(i: usize) -> Self;
+    fn apply(self, m: &SlotMove) -> Self;
+}
+
+macro_rules! impl_coord {
+    ($t:ty) => {
+        impl Coord for $t {
+            fn solved() -> Self {
+                <$t>::solved()
+            }
+            #[inline]
+            fn index(self) -> usize {
+                <$t>::index(self)
+            }
+            fn from_index(i: usize) -> Self {
+                <$t>::from_index(i)
+            }
+            #[inline]
+            fn apply(self, m: &SlotMove) -> Self {
+                <$t>::apply(self, m)
+            }
+        }
+    };
+}
+impl_coord!(P1);
+impl_coord!(P2);
+
 // ---------- phase 1: orientation and I/O separation ----------
 
 /// C(15, 8): ways to place the 8 O-type pieces in slots 1..16.
 pub const P1_SEP: usize = 6435;
-/// One η-orientation bit for each of slots 1..16.
-pub const P1_ORI: usize = 1 << 15;
+/// One η-orientation bit for each of slots 1..15. The bit for slot 15 is
+/// implied: every reachable position has an even number of bits set.
+pub const P1_ORI: usize = 1 << 14;
 pub const P1_SIZE: usize = P1_SEP * P1_ORI;
 
 const fn binomial(n: u32, k: u32) -> u32 {
@@ -300,12 +333,14 @@ impl P1 {
     #[inline]
     pub fn index(self) -> usize {
         debug_assert_eq!(self.o().count_ones(), 8);
-        sep_rank(self.0 >> 1 & 0x7FFF) as usize * P1_ORI + (self.0 >> 17) as usize
+        debug_assert!(self.ori().count_ones().is_multiple_of(2));
+        sep_rank(self.0 >> 1 & 0x7FFF) as usize * P1_ORI + (self.0 >> 17 & 0x3FFF) as usize
     }
 
     pub fn from_index(i: usize) -> Self {
         let o = (SEP_UNRANK[i / P1_ORI] as u32) << 1;
-        let ori = ((i % P1_ORI) as u32) << 1;
+        let ori = (i % P1_ORI) as u32;
+        let ori = (ori | (ori.count_ones() & 1) << 14) << 1;
         P1(o | ori << 16)
     }
 
@@ -330,7 +365,10 @@ impl P1 {
 /// z+ slots other than slot 0, and z- slots.
 pub const P2_BLOCK_A: [u8; 7] = [1, 2, 3, 8, 9, 10, 11];
 pub const P2_BLOCK_B: [u8; 8] = [4, 5, 6, 7, 12, 13, 14, 15];
-pub const P2_SIZE: usize = 5040 * 40320;
+/// Only even permutations (of the 15 pieces) are reachable, so the z- block's
+/// parity is implied by the z+ block's, and its rank's last Lehmer digit (its
+/// lowest bit) is dropped.
+pub const P2_SIZE: usize = 5040 * 20160;
 
 /// Which piece (by home slot) sits at each slot.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -338,22 +376,41 @@ pub struct P2 {
     pub pieces: [u8; 16],
 }
 
-fn block_pos(slot: u8) -> usize {
-    P2_BLOCK_A
-        .iter()
-        .position(|&x| x == slot)
-        .or_else(|| P2_BLOCK_B.iter().position(|&x| x == slot))
-        .unwrap()
-}
+/// `BLOCK_POS[slot]`: the slot's position within its block.
+static BLOCK_POS: [u8; 16] = {
+    let mut t = [u8::MAX; 16];
+    let mut i = 0;
+    while i < 8 {
+        if i < 7 {
+            t[P2_BLOCK_A[i] as usize] = i as u8;
+        }
+        t[P2_BLOCK_B[i] as usize] = i as u8;
+        i += 1;
+    }
+    t
+};
 
+/// Lehmer code: digit `i` counts the later entries smaller than `perm[i]`,
+/// which is `perm[i]` minus the earlier entries smaller than it.
+#[inline]
 fn rank_perm(perm: &[u8]) -> usize {
     let n = perm.len();
-    let mut r = 0;
-    for i in 0..n {
-        let smaller = perm[i + 1..].iter().filter(|&&x| x < perm[i]).count();
-        r = r * (n - i) + smaller;
+    let (mut r, mut seen) = (0, 0u32);
+    for (i, &x) in perm.iter().enumerate() {
+        let smaller = x as u32 - (seen & ((1 << x) - 1)).count_ones();
+        seen |= 1 << x;
+        r = r * (n - i) + smaller as usize;
     }
     r
+}
+
+/// Whether a permutation is odd.
+fn odd(perm: &[u8]) -> bool {
+    let mut inversions = 0;
+    for i in 0..perm.len() {
+        inversions += perm[i + 1..].iter().filter(|&&x| x < perm[i]).count();
+    }
+    inversions % 2 == 1
 }
 
 fn unrank_perm<const N: usize>(mut r: usize) -> [u8; N] {
@@ -381,16 +438,18 @@ impl P2 {
 
     #[cfg_attr(feature = "profiling", inline(never))]
     pub fn index(self) -> usize {
-        let a: [u8; 7] =
-            std::array::from_fn(|i| block_pos(self.pieces[P2_BLOCK_A[i] as usize]) as u8);
-        let b: [u8; 8] =
-            std::array::from_fn(|i| block_pos(self.pieces[P2_BLOCK_B[i] as usize]) as u8);
-        rank_perm(&a) * 40320 + rank_perm(&b)
+        let a: [u8; 7] = P2_BLOCK_A.map(|p| BLOCK_POS[self.pieces[p as usize] as usize]);
+        let b: [u8; 8] = P2_BLOCK_B.map(|p| BLOCK_POS[self.pieces[p as usize] as usize]);
+        debug_assert!(!(odd(&a) ^ odd(&b)));
+        rank_perm(&a) * 20160 + rank_perm(&b) / 2
     }
 
     pub fn from_index(i: usize) -> Self {
-        let a: [u8; 7] = unrank_perm(i / 40320);
-        let b: [u8; 8] = unrank_perm(i % 40320);
+        let a: [u8; 7] = unrank_perm(i / 20160);
+        let mut b: [u8; 8] = unrank_perm(i % 20160 * 2);
+        if odd(&a) ^ odd(&b) {
+            b = unrank_perm(i % 20160 * 2 + 1);
+        }
         let mut pieces = [0; 16];
         for k in 0..7 {
             pieces[P2_BLOCK_A[k] as usize] = P2_BLOCK_A[a[k] as usize];

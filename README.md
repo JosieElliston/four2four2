@@ -66,9 +66,36 @@ Orientation isn't stored, because once oll holds it follows from the permutation
 Half of the 203M entries are reachable (even permutations only).
 Both tables: one byte per entry holding the exact distance, built by breadth-first search.
 
-## perf
+Phase 1 will store distance mod 3 in 2 bits, cutting that table to 26 MB, and phase 2 will cap the distance at 15 in 4 bits for 51 MB, with a small IDA* fallback for the rare values at or above 15.
+Phase 2 will use a mod-3 approach instead, so it avoids capped values and the fallback; leaf checks step downhill a few times, which is affordable since leaves are rare, and both tables shrink to about 26 MB. I'm implementing that now.
 
-phase lengths don't quite add up to the total because twists can cancel at the boundary.
+## depth = 0 search
+
+this is a simplified version of the full solver, which is fast but nonoptimal.
+
+consider all optimal paths to oll, then consider all optimal paths from each oll to solved.
+
+ie, at each state, consider all children states, get the min STM to finish the phase for each child from the LUT, and explore the children with that min STM.
+
+with this alg, phase 1 takes 8.12 STM, phase 2 takes 11.83 STM, adn the total solve takes 19.95 STM and 0.36 ms on average.
+
+## cross phase search
+
+this is an extention to depth = 0 search which finds optimal solutinos.
+
+instead of only considering the optimal child, we also have some additional depth for the phase 1, allowing solutions for phase 1 that are up to that slack worse, in hopes for a better phase 2.
+
+## more pruning
+
+that makes each higher depth takes about `NUM_TWISTS = 28` slower, so we need more pruning.
+
+the insight is that a full solution must simultaneously solve all four symmetric oll targets.
+
+this implies that a bound on the full solution is `depth so far + max over targets of that target's phase-1 distance`
+
+## runtime
+
+finally, this is fast enough for an optimal solver. (this chart is kinda funny bc we stop exploring depth once it no longer helps)
 
 | `--depth` | phase 1 STM | phase 2 STM | total STM | range | time |
 |---|---|---|---|---|---|
