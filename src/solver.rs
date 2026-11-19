@@ -136,8 +136,15 @@ pub fn solve_with_target(tables: &Tables, state: &State, sym: Rot) -> (Vec<Twist
 
 /// Tries every oll target and keeps the shortest total.
 pub fn solve(tables: &Tables, state: &State) -> Solution {
+    solve_with_targets(tables, state, target_symmetries().len())
+}
+
+/// Tries the first `n_targets` of [`target_symmetries`] and keeps the
+/// shortest total.
+pub fn solve_with_targets(tables: &Tables, state: &State, n_targets: usize) -> Solution {
     target_symmetries()
         .into_iter()
+        .take(n_targets.max(1))
         .enumerate()
         .map(|(k, sym)| {
             let (phase1, phase2) = solve_with_target(tables, state, sym);
