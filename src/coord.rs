@@ -22,6 +22,8 @@ pub struct SlotMove {
     pub perm: [u8; 16],
     /// Whether the twist swaps the z and w axes (flipping η orientation).
     pub swaps_zw: bool,
+    /// The twist's effect on a [`P1`].
+    pub p1: P1Move,
 }
 
 impl SlotMove {
@@ -34,10 +36,12 @@ impl SlotMove {
                 p as u8
             }
         });
+        let swaps_zw = rot.image(2).0 == 3;
         SlotMove {
             twist,
             perm,
-            swaps_zw: rot.image(2).0 == 3,
+            swaps_zw,
+            p1: P1Move::new(cell, rot, swaps_zw),
         }
     }
 }
@@ -96,31 +100,175 @@ pub const P1_SEP: usize = 6435;
 pub const P1_ORI: usize = 1 << 15;
 pub const P1_SIZE: usize = P1_SEP * P1_ORI;
 
-struct SepTables {
-    rank: Vec<u16>,   // 15-bit mask -> rank, or u16::MAX
-    unrank: Vec<u16>, // rank -> mask
+const fn binomial(n: u32, k: u32) -> u32 {
+    if k > n {
+        return 0;
+    }
+    let (mut r, mut i) = (1, 0);
+    while i < k {
+        r = r * (n - i) / (i + 1);
+        i += 1;
+    }
+    r
 }
 
-static SEP: LazyLock<SepTables> = LazyLock::new(|| {
-    let mut rank = vec![u16::MAX; 1 << 15];
-    let mut unrank = vec![];
-    for m in 0..1u32 << 15 {
-        if m.count_ones() == 8 {
-            rank[m as usize] = unrank.len() as u16;
-            unrank.push(m as u16);
+/// The rank of an 8-bit-set 15-bit O-mask (slots 1..16) among all of them in
+/// increasing order is its combinatorial number, `sum C(p_j, j + 1)` over
+/// its set bits `p_0 < p_1 < ...`. The low byte's share depends only on the
+/// low byte; the rest depends on the high bits and how many bits the low byte
+/// has. Splitting it this way keeps the tables small enough to stay in L1
+/// while the search streams the phase 1 table past them.
+///
+/// `SEP_LO[lo]`: low 16 bits, the low byte's share; high bits, its popcount
+/// times 128 (the offset into `SEP_HI`).
+static SEP_LO: [u32; 256] = {
+    let mut t = [0; 256];
+    let mut lo = 0;
+    while lo < 256 {
+        let (mut r, mut c, mut p) = (0, 0, 0);
+        while p < 8 {
+            if lo >> p & 1 == 1 {
+                c += 1;
+                r += binomial(p, c);
+            }
+            p += 1;
+        }
+        t[lo as usize] = r | (c * 128) << 16;
+        lo += 1;
+    }
+    t
+};
+
+/// `SEP_HI[c * 128 + hi]`: the share of the high 7 bits `hi`, given `c` bits
+/// below them.
+static SEP_HI: [u16; 9 * 128] = {
+    let mut t = [0; 9 * 128];
+    let mut c0 = 0;
+    while c0 <= 8 {
+        let mut hi = 0;
+        while hi < 128 {
+            let (mut r, mut c, mut p) = (0, c0, 0);
+            while p < 7 {
+                if hi >> p & 1 == 1 {
+                    c += 1;
+                    r += binomial(p + 8, c);
+                }
+                p += 1;
+            }
+            t[(c0 * 128 + hi) as usize] = r as u16;
+            hi += 1;
+        }
+        c0 += 1;
+    }
+    t
+};
+
+/// Rank of a 15-bit O-mask with 8 bits set.
+#[inline]
+fn sep_rank(m: u32) -> u32 {
+    let lo = SEP_LO[(m & 0xFF) as usize];
+    (lo & 0xFFFF) + SEP_HI[((lo >> 16) + (m >> 8 & 0x7F)) as usize] as u32
+}
+
+/// Rank -> 15-bit O-mask, in increasing order.
+static SEP_UNRANK: [u16; P1_SEP] = {
+    let mut unrank = [0; P1_SEP];
+    let (mut m, mut r) = (0, 0);
+    while m < 1 << 15 {
+        if (m as u32).count_ones() == 8 {
+            unrank[r] = m as u16;
+            r += 1;
+        }
+        m += 1;
+    }
+    assert!(r == P1_SEP);
+    unrank
+};
+
+/// Phase 1 data per slot, as two 16-bit masks packed in one word (bit 0 =
+/// slot 0, always 0):
+/// - bits 0..16, `o`: the piece is O-type (home has z = -1);
+/// - bits 16..32, `ori`: the sticker on the slot's z axis is a w-colored (U/D)
+///   sticker.
+///
+/// Both masks are indexed by slot, so a twist permutes their bits the same
+/// way, and both move together.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct P1(u32);
+
+/// Number of delta swaps in a [`P1Move`].
+const P1_SWAPS: usize = 2;
+
+/// A twist's effect on [`P1`]. A twist moves the slots of its cell by a
+/// signed permutation of the axes, which on slot indices is a permutation of
+/// index bits after an xor. Negating index bit `i` and swapping index bits
+/// `i` and `j` each permute a slot mask by one delta swap, so the whole twist
+/// is a few delta swaps (restricted to the cell), then an xor of `ori` on the
+/// cell when z and w trade places.
+#[derive(Copy, Clone, Debug)]
+pub struct P1Move {
+    /// `(mask, shift)`: swap bit `p` with bit `p + shift` for each `p` in
+    /// `mask`. Unused ones are `(0, 0)`.
+    swaps: [(u32, u32); P1_SWAPS],
+    flip: u32,
+}
+
+impl P1Move {
+    fn new(cell: Cell, rot: Rot, swaps_zw: bool) -> Self {
+        let in_cell = |p: usize| (p >> cell.axis() & 1 == 1) == cell.is_negative();
+        let mask = |f: &dyn Fn(usize) -> bool| -> u32 {
+            let m: u32 = (0..16)
+                .filter(|&p| in_cell(p) && f(p))
+                .map(|p| 1 << p)
+                .sum();
+            m | m << 16
+        };
+        let mut perm: [usize; 4] = std::array::from_fn(|i| rot.image(i as u8).0 as usize);
+        let mut neg: [bool; 4] = std::array::from_fn(|i| rot.image(i as u8).1);
+        let mut swaps = vec![];
+        // new index bit perm[i] is old index bit i xor neg[i]. Swapping two
+        // index bits and negating both is one delta swap, between the slots
+        // where both bits are 0 and those where both are 1...
+        for i in 0..4 {
+            let j = perm[i];
+            if i < j && perm[j] == i && neg[i] && neg[j] {
+                swaps.push((
+                    mask(&|p| p >> i & 1 == 0 && p >> j & 1 == 0),
+                    (1 << i) + (1 << j),
+                ));
+                (perm[i], perm[j], neg[i], neg[j]) = (i, j, false, false);
+            }
+        }
+        // ...then the remaining xor...
+        for (i, &n) in neg.iter().enumerate() {
+            if n {
+                swaps.push((mask(&|p| p >> i & 1 == 0), 1 << i));
+            }
+        }
+        // ...then the remaining bit permutation, as transpositions of index
+        // bits. The ops above touch disjoint index bits, so they commute.
+        for i in 0..4 {
+            while perm[i] != i {
+                let j = perm[i];
+                let (a, b) = (i.min(j), i.max(j));
+                swaps.push((
+                    mask(&|p| p >> a & 1 == 1 && p >> b & 1 == 0),
+                    (1 << b) - (1 << a),
+                ));
+                perm.swap(i, j);
+            }
+        }
+        assert!(swaps.len() <= P1_SWAPS, "{} swaps", swaps.len());
+        swaps.resize(P1_SWAPS, (0, 0));
+        P1Move {
+            swaps: swaps.try_into().unwrap(),
+            flip: if swaps_zw {
+                mask(&|_| true) & 0xFFFF_0000
+            } else {
+                0
+            },
         }
     }
-    assert_eq!(unrank.len(), P1_SEP);
-    SepTables { rank, unrank }
-});
-
-/// Phase 1 data per slot, as two 16-bit masks (bit 0 = slot 0, always 0):
-/// `o`: the piece is O-type (home has z = -1);
-/// `ori`: the sticker on the slot's z axis is a w-colored (U/D) sticker.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct P1 {
-    pub o: u16,
-    pub ori: u16,
 }
 
 impl P1 {
@@ -134,43 +282,47 @@ impl P1 {
                 ori |= 1 << p;
             }
         }
-        P1 { o, ori }
+        P1(o | ori << 16)
     }
 
     pub fn solved() -> Self {
-        let o = (1..16).filter(|p| p >> 2 & 1 == 1).map(|p| 1 << p).sum();
-        P1 { o, ori: 0 }
+        let o: u32 = (1..16).filter(|p| p >> 2 & 1 == 1).map(|p| 1 << p).sum();
+        P1(o)
     }
 
+    pub fn o(self) -> u16 {
+        self.0 as u16
+    }
+    pub fn ori(self) -> u16 {
+        (self.0 >> 16) as u16
+    }
+
+    #[inline]
     pub fn index(self) -> usize {
-        let sep = SEP.rank[(self.o >> 1) as usize];
-        debug_assert_ne!(sep, u16::MAX);
-        sep as usize * P1_ORI + (self.ori >> 1) as usize
+        debug_assert_eq!(self.o().count_ones(), 8);
+        sep_rank(self.0 >> 1 & 0x7FFF) as usize * P1_ORI + (self.0 >> 17) as usize
     }
 
     pub fn from_index(i: usize) -> Self {
-        P1 {
-            o: SEP.unrank[i / P1_ORI] << 1,
-            ori: ((i % P1_ORI) as u16) << 1,
-        }
+        let o = (SEP_UNRANK[i / P1_ORI] as u32) << 1;
+        let ori = ((i % P1_ORI) as u32) << 1;
+        P1(o | ori << 16)
     }
 
+    #[inline]
     pub fn apply(self, m: &SlotMove) -> Self {
-        let (mut o, mut ori) = (0, 0);
-        for p in 0..16 {
-            let q = m.perm[p];
-            let flip = (m.swaps_zw && moves_slot(m, p)) as u16;
-            o |= (self.o >> p & 1) << q;
-            ori |= ((self.ori >> p & 1) ^ flip) << q;
-        }
-        P1 { o, ori }
+        self.apply_p1(&m.p1)
     }
-}
 
-/// Whether slot `p` is on the twisted cell (even if it maps to itself).
-fn moves_slot(m: &SlotMove, p: usize) -> bool {
-    let c = m.twist.cell();
-    (p >> c.axis() & 1 == 1) == c.is_negative()
+    #[inline]
+    pub fn apply_p1(self, m: &P1Move) -> Self {
+        let mut x = self.0;
+        for &(mask, shift) in &m.swaps {
+            let t = (x >> shift ^ x) & mask;
+            x ^= t ^ t << shift;
+        }
+        P1(x ^ m.flip)
+    }
 }
 
 // ---------- phase 2: permutation within the z+ and z- groups ----------
@@ -227,6 +379,7 @@ impl P2 {
         }
     }
 
+    #[cfg_attr(feature = "profiling", inline(never))]
     pub fn index(self) -> usize {
         let a: [u8; 7] =
             std::array::from_fn(|i| block_pos(self.pieces[P2_BLOCK_A[i] as usize]) as u8);
@@ -248,6 +401,7 @@ impl P2 {
         P2 { pieces }
     }
 
+    #[cfg_attr(feature = "profiling", inline(never))]
     pub fn apply(self, m: &SlotMove) -> Self {
         let mut pieces = [0; 16];
         for p in 0..16 {
@@ -272,6 +426,13 @@ mod tests {
             s.apply(all[(x % all.len() as u64) as usize]);
         }
         s
+    }
+
+    #[test]
+    fn sep_rank_is_position_in_order() {
+        for (r, &m) in SEP_UNRANK.iter().enumerate() {
+            assert_eq!(sep_rank(m as u32), r as u32, "{m:015b}");
+        }
     }
 
     #[test]

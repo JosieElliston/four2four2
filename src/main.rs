@@ -42,7 +42,7 @@ enum Command {
 #[derive(clap::Args)]
 struct SearchArgs {
     /// Try phase 1 solutions up to this many twists longer than optimal.
-    /// Each step costs about 30x the time.
+    /// Each step costs about 10x the time.
     #[arg(long, default_value_t = solver::DEFAULT_DEPTH)]
     depth: u8,
 }
@@ -68,8 +68,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sol = solver::solve(&tables, &state, search.depth);
             let twists = sol.twists();
             eprintln!(
-                "stm {} ({} + {}, target {}) in {:.1?}",
+                "stm {}{} ({} + {}, target {}) in {:.1?}",
                 hsc_stm(&twists),
+                if sol.optimal { " (optimal)" } else { "" },
                 sol.phase1.len(),
                 sol.phase2.len(),
                 sol.target,
@@ -84,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let t0 = Instant::now();
             let mut total = 0;
+            let mut nodes = 0;
             for _ in 0..n {
                 let mut state = State::solved();
                 for _ in 0..1000 {
@@ -94,12 +96,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 assert!(state.is_solved());
                 let stm = hsc_stm(&sol.twists());
                 total += stm;
+                nodes += sol.nodes;
                 println!("{stm} {} {}", sol.phase1.len(), sol.phase2.len());
             }
             eprintln!(
-                "mean stm {:.2} over {n} scrambles, {:.1?} per solve",
+                "mean stm {:.2} over {n} scrambles, {:.1?} per solve, {:.3e} nodes per solve",
                 total as f64 / n as f64,
-                t0.elapsed() / n.max(1) as u32
+                t0.elapsed() / n.max(1) as u32,
+                nodes as f64 / n.max(1) as f64,
             );
         }
     }

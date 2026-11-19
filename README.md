@@ -32,7 +32,7 @@ oll has 4 symmetric variants: which ring, and whether to separate I/O or U/D.
 
 we hold the all-positive piece fixed, and only use twists of the four negative cells: `εC`, `εD`, `ηC`, `ηD`.
 
-TODO: what is an O-type piece
+TODO: what is an O-type piece: a piece with a pink sticker.
 
 Phase 1 coordinate: which slots hold O-type pieces (C(15,8) = 6435 possibilities) × which side of each slot's η stickers faces z (2¹⁵). That's 211M entries, of which half (105M) are reachable.
 
@@ -52,16 +52,30 @@ the phase 1 table takes 8 s to build and 211 MB of memory and disk.
 
 the phase 2 table takes 10 s to build and 203 MB of memory and disk.
 
+
+What the tables are keyed by
+Everything is in a frame where slot 0, the all-positive corner (εA εB ηA ηB), always holds its own piece. Only twists of εC, εD, ηC and ηD are used (28 in total).
+
+O-type piece: a piece whose home is on the O cell (ηC, z = −1). There are 8 O-type and 8 I-type pieces. Piece 0 is I-type, so 8 O-type pieces are spread over the other 15 slots.
+Phase-1 key: rank(O-mask) · 2¹⁵ + ori-mask. Only half of the 211M entries are reachable.
+O-mask: which of slots 1–15 hold an O-type piece. It has 8 bits set, ranked into 0..6435.
+ori-mask: for each of slots 1–15, whether the sticker facing that slot's z axis is a U/D sticker (it should be an I/O one).
+Target: no orientation bits set, and O-type pieces exactly in the slots with z = −1.
+Phase-2 key: rank(perm of the 7 pieces in z+ slots other than slot 0) · 8! + rank(perm of the 8 pieces in z− slots). Both ranks are standard Lehmer codes.
+Orientation isn't stored, because once oll holds it follows from the permutation.
+Half of the 203M entries are reachable (even permutations only).
+Both tables: one byte per entry holding the exact distance, built by breadth-first search.
+
 ## perf
 
 phase lengths don't quite add up to the total because twists can cancel at the boundary.
 
-| `--depth` | phase 1 STM | phase 2 STM | total STM | range | time per solve |
+| `--depth` | phase 1 STM | phase 2 STM | total STM | range | time |
 |---|---|---|---|---|---|
-| 0 | 8.12 | 11.83 | 19.95 | 14–24 | 0.14 ms |
-| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 2.7 ms |
-| 2 (default) | 9.93 | 6.21 | 16.14 | 12–20 | 81 ms |
-| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 2.9 s |
+| 0 | 8.12 | 11.83 | 19.95 | 14–24 | 0.36 ms |
+| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 8.6 ms |
+| 2 (default) | 9.93 | 6.21 | 16.14 | 12–20 | 118 ms |
+| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 0.99 s |
 
 ## usage
 
