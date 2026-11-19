@@ -28,6 +28,41 @@ these counts are with one piece fixed.
 
 oll has 4 symmetric variants: which ring, and whether to separate I/O or U/D.
 
+## tables
+
+we hold the all-positive piece fixed, and only use twists of the four negative cells: `εC`, `εD`, `ηC`, `ηD`.
+
+TODO: what is an O-type piece
+
+Phase 1 coordinate: which slots hold O-type pieces (C(15,8) = 6435 possibilities) × which side of each slot's η stickers faces z (2¹⁵). That's 211M entries, of which half (105M) are reachable.
+
+Phase 2 coordinate: the permutation of the 7 remaining z+ pieces × the permutation of the 8 z− pieces. That's 203M entries, of which half are reachable.
+
+Solving: for each of the 4 symmetric oll targets, search every phase 1 solution up to `--depth` twists longer than optimal (default 2), pruned exactly by the phase 1 table. Track where the pieces go along the way, so each finished phase 1 costs one phase 2 lookup. Keep the shortest total, then step down the phase 2 table.
+
+
+Phase 1: which slots hold O-type pieces, plus one η-orientation bit per slot.
+
+Phase 2: the permutation of the 7 remaining z+ pieces and the 8 z− pieces.
+
+There's no symmetry reduction or parity packing, so half of each table is never reached.
+
+
+the phase 1 table takes 8 s to build and 211 MB of memory and disk.
+
+the phase 2 table takes 10 s to build and 203 MB of memory and disk.
+
+## perf
+
+phase lengths don't quite add up to the total because twists can cancel at the boundary.
+
+| `--depth` | phase 1 STM | phase 2 STM | total STM | range | time per solve |
+|---|---|---|---|---|---|
+| 0 | 8.12 | 11.83 | 19.95 | 14–24 | 0.14 ms |
+| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 2.7 ms |
+| 2 (default) | 9.93 | 6.21 | 16.14 | 12–20 | 81 ms |
+| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 2.9 s |
+
 ## usage
 
 ```sh
@@ -36,10 +71,6 @@ cargo run -r -- bench -n 1000          # solve random 1000-twist scrambles, prin
 cargo test                             # replays tests/data/stm35.hsc
 cargo test -r -- --ignored             # also solves its scramble (needs the tables)
 ```
-
-the first run builds both tables (about 20 s and ~420 MB of memory, measured on the author's mac) and caches them in `tables/` (gitignored, ~415 MB). each phase is solved optimally by walking its table downhill, and all 4 oll targets are tried. the total is not optimal: nothing searches across phases yet.
-
-as of 2026-11-19, over 10,000 random scrambles (`bench -n 10000`), solutions average 21.87 STM (13 to 26). trying only one oll target (`--targets 1`) averages 23.85 (13 to 29), so the 4 targets save about 2 STM.
 
 logs are read for their literal scramble twists; scrambles given only by seed are rejected. stm is counted the way hsc2 counts it (runs of consecutive twists on the same cell), which matches the `stmN` in hsc2's log filenames.
 

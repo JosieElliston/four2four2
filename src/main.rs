@@ -41,26 +41,10 @@ enum Command {
 
 #[derive(clap::Args)]
 struct SearchArgs {
-    /// Only target the I/O separation in the η ring, instead of trying all 4
-    /// symmetric oll targets (either ring, either axis).
-    #[arg(long)]
-    no_symmetries: bool,
     /// Try phase 1 solutions up to this many twists longer than optimal.
-    #[arg(long, default_value_t = 2, conflicts_with = "greedy")]
+    /// Each step costs about 30x the time.
+    #[arg(long, default_value_t = solver::DEFAULT_DEPTH)]
     depth: u8,
-    /// Take the first optimal phase 1 and don't search further. Cheaper and
-    /// worse than `--depth 0`, which tries every optimal phase 1.
-    #[arg(long)]
-    greedy: bool,
-}
-
-impl SearchArgs {
-    fn options(&self) -> solver::Options {
-        solver::Options {
-            symmetries: !self.no_symmetries,
-            depth: (!self.greedy).then_some(self.depth),
-        }
-    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -81,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.apply_all(&scramble);
 
             let t0 = Instant::now();
-            let sol = solver::solve(&tables, &state, search.options());
+            let sol = solver::solve(&tables, &state, search.depth);
             let twists = sol.twists();
             eprintln!(
                 "stm {} ({} + {}, target {}) in {:.1?}",
@@ -105,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for _ in 0..1000 {
                     state.apply(all[rng.random_range(0..all.len())]);
                 }
-                let sol = solver::solve(&tables, &state, search.options());
+                let sol = solver::solve(&tables, &state, search.depth);
                 state.apply_all(&sol.twists());
                 assert!(state.is_solved());
                 let stm = hsc_stm(&sol.twists());

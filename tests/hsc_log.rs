@@ -35,11 +35,11 @@ fn rewritten_log_round_trips() {
 #[test]
 #[ignore]
 fn solver_solves_log_scramble() {
-    use four2four2::solver::{Tables, solve};
+    use four2four2::solver::{DEFAULT_DEPTH, Tables, solve};
     let tables = Tables::load_or_build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tables"));
     let mut state = State::solved();
     state.apply_all(&hsc::parse(LOG).unwrap().scramble);
-    let sol = solve(&tables, &state, Default::default());
+    let sol = solve(&tables, &state, DEFAULT_DEPTH);
     state.apply_all(&sol.twists());
     assert!(state.is_solved());
     // each phase is at most its table's maximum depth

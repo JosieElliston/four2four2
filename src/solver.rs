@@ -95,25 +95,8 @@ impl Solution {
     }
 }
 
-/// How hard to search.
-#[derive(Copy, Clone, Debug)]
-pub struct Options {
-    /// Try all of [`target_symmetries`], or only the first.
-    pub symmetries: bool,
-    /// `None`: take the first optimal phase 1, then optimal phase 2.
-    /// `Some(k)`: try every phase 1 up to `k` twists longer than optimal and
-    /// keep the shortest total.
-    pub depth: Option<u8>,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Options {
-            symmetries: true,
-            depth: Some(2),
-        }
-    }
-}
+/// Default for how many twists past optimal phase 1 to search.
+pub const DEFAULT_DEPTH: u8 = 2;
 
 /// The frame a target is solved in: relabel by `sym` so the target is the
 /// z-sorted one, then rotate by `rot` so piece 0 is home.
@@ -188,11 +171,12 @@ fn search_phase1(
     }
 }
 
-/// Solves `state`. Twists in the result are in the frame of `state`.
-pub fn solve(tables: &Tables, state: &State, opts: Options) -> Solution {
+/// Solves `state`, trying every phase 1 up to `depth` twists longer than
+/// optimal for each oll target, and keeping the shortest total. Twists in the
+/// result are in the frame of `state`.
+pub fn solve(tables: &Tables, state: &State, depth: u8) -> Solution {
     let frames: Vec<(Frame, State)> = target_symmetries()
         .into_iter()
-        .take(if opts.symmetries { 4 } else { 1 })
         .map(|sym| Frame::new(state, sym))
         .collect();
 
@@ -204,38 +188,18 @@ pub fn solve(tables: &Tables, state: &State, opts: Options) -> Solution {
         })
         .collect();
 
-    // greedy: first optimal phase 1, then phase 2. also seeds the bound for
-    // the search below.
     let mut best: Option<Best> = None;
-    for (target, &(c1, c2, _)) in starts.iter().enumerate() {
-        let phase1 = descend(&tables.p1, &PHASE1_MOVES, c1, P1::index, P1::apply);
-        let p2 = phase1
-            .iter()
-            .fold(c2, |c, t| c.apply(&coord::SlotMove::new(*t)));
-        let total = phase1.len() + tables.p2[p2.index()] as usize;
-        if best.as_ref().is_none_or(|b| total < b.total) {
-            best = Some(Best {
-                total,
-                target,
-                phase1,
-                p2,
-            });
-        }
-    }
-
     // every phase 1 of each length, shortest lengths first across all targets
     // so a good total found on one target cuts off long searches on the rest
-    if let Some(depth) = opts.depth {
-        for extra in 0..=depth {
-            for (target, &(c1, c2, d1)) in starts.iter().enumerate() {
-                let len = d1 + extra;
-                // phase 2 can't be negative, so this length can't win
-                if best.as_ref().is_some_and(|b| len as usize >= b.total) {
-                    continue;
-                }
-                let mut path = vec![];
-                search_phase1(tables, c1, c2, len, &mut path, target, &mut best);
+    for extra in 0..=depth {
+        for (target, &(c1, c2, d1)) in starts.iter().enumerate() {
+            let len = d1 + extra;
+            // phase 2 can't be negative, so this length can't win
+            if best.as_ref().is_some_and(|b| len as usize >= b.total) {
+                continue;
             }
+            let mut path = vec![];
+            search_phase1(tables, c1, c2, len, &mut path, target, &mut best);
         }
     }
 
