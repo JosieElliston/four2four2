@@ -1,6 +1,6 @@
 # README
 
-this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions of ~14 STM in ~10 s. see [antipode](antipode.md) for the exploration of god's number.
+this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions of ~14 STM in ~5 s. see [antipode](antipode.md) for the exploration of god's number.
 
 ![solved](assets/solved.png)
 
@@ -68,19 +68,31 @@ each higher depth is about `NUM_TWISTS = 28` slower, so we need more pruning.
 
 the insight is that a full solution must simultaneously solve all four symmetric oll targets.
 
-this implies that a bound on the full solution is `depth so far + max over targets of that target's phase-1 distance`
+this implies that a bound on the full solution is `depth so far + max over targets of that target's phase-1 distance`.
+
+finally, this is fast enough for an optimal solver, but there's still more.
+
+## fewer rounds
+
+once some target's phase 1 budget reaches `best - 1`, that budget never prunes anything the bound above doesn't already prune, so every later depth would walk the exact same tree, only finishing longer phase 1s. so we instead terminate after that round is done.
+
+## fewer loads
+
+the search is bound by phase 1 table loads, about 4 per child. most children are pruned by a single target, so each node first loads only the target with the largest distance for every child, then the other three only for the children that survive.
 
 ## runtime
 
-finally, this is fast enough for an optimal solver. (the runtime in this chart is a bit funny bc a solve stops once every oll target's phase 1 budget reaches the best full solution found, so a depth 3 solve might have terminated at depth 2)
+the runtime in this chart is a bit funny bc a solve stops at the round where some oll target's phase 1 budget reaches one less than the best full solution found, so a depth 3 solve might have terminated at depth 2.
 
-| `--depth` | phase 1 STM | phase 2 STM | total STM | range | time |
-|---|---|---|---|---|---|
-| 0 | 8.12 | 11.83 | 19.95 | 14–24 | 0.36 ms |
-| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 7.5 ms |
-| 2 | 9.93 | 6.21 | 16.14 | 12–20 | 105 ms |
-| 3 | 10.77 | 4.00 | 14.77 | 12–17 | 0.79 s |
-| optimal | 12.07 | 1.73 | 13.80 | 12–15 | 7.9 s |
+| `--depth` | n | phase 1 STM | phase 2 STM | total STM | range | time |
+|---|---|---|---|---|---|---|
+| 0 | 1000 | 8.14 | 11.82 | 19.95 | 14–24 | 0.30 ms |
+| 1 | 1000 | 9.00 | 8.82 | 17.82 | 12–21 | 7.6 ms |
+| 2 | 1000 | 9.94 | 6.20 | 16.14 | 12–20 | 94 ms |
+| 3 | 1000 | 10.85 | 4.10 | 14.95 | 12–17 | 0.65 s |
+| optimal | 100 | 11.69 | 2.26 | 13.95 | 12–15 | 5.4 s |
+
+measured with `bench -n N --seed 0` on an apple m5.
 
 # tables
 

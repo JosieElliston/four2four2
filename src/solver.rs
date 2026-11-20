@@ -204,6 +204,9 @@ struct Search<'a> {
     limit: usize,
     /// Stop at the first solution found.
     first: bool,
+    /// The last round: budgets no longer prune, so every phase 1 at least
+    /// as long as its budget is finished, not just those exactly as long.
+    last: bool,
 }
 
 impl Search<'_> {
@@ -235,35 +238,6 @@ impl Search<'_> {
         }
     }
 
-    /// Every child's phase 1 coordinates and distances, for children not on
-    /// `skip` (a range of [`PHASE1_MOVES`]). The search is bound by these
-    /// loads, so they're issued with no branches on them, letting them overlap.
-    #[cfg_attr(feature = "profiling", inline(never))]
-    fn expand(
-        &self,
-        c: &[P1; 4],
-        d: &[u8; 4],
-        skip: std::ops::Range<usize>,
-    ) -> ([[P1; 4]; 28], [[u8; 4]; 28]) {
-        let moves = &FRAMES.moves;
-        let p1 = &self.tables.p1;
-        let mut cc = [[P1::solved(); 4]; 28];
-        let mut dd = [[0u8; 4]; 28];
-        let kids = (0..28).filter(|i| !skip.contains(i));
-        let decode = d.map(child_distances);
-        for i in kids.clone() {
-            for k in 0..4 {
-                cc[i][k] = c[k].apply_p1(&moves[i][k]);
-            }
-        }
-        for i in kids {
-            for k in 0..4 {
-                dd[i][k] = decode[k][p1.get(cc[i][k].index()) as usize];
-            }
-        }
-        (cc, dd)
-    }
-
     /// `c[k]` is the phase 1 coordinate seen through target symmetry `k`,
     /// `d[k]` its distance. `p2` holds the pieces in the normalized frame.
     fn dfs(&mut self, c: [P1; 4], d: [u8; 4], p2: P2) {
@@ -273,12 +247,17 @@ impl Search<'_> {
         self.nodes += 1;
         let g = self.path.len();
         for (k, &dk) in d.iter().enumerate() {
-            if dk == 0 && g == self.budget[k] as usize {
+            let new = if self.last {
+                g >= self.budget[k] as usize
+            } else {
+                g == self.budget[k] as usize
+            };
+            if dk == 0 && new {
                 self.leaf(k, p2);
             }
         }
         // a child must stay within some target's budget
-        if self.budget.iter().all(|&b| g >= b as usize) {
+        if !self.last && self.budget.iter().all(|&b| g >= b as usize) {
             return;
         }
         // Two twists of one cell are one twist, which is tried on its own, so
@@ -290,21 +269,60 @@ impl Search<'_> {
                 .unwrap();
             s..s + 7
         });
-        let (cc, dd) = self.expand(&c, &d, skip.clone());
-        for (i, m) in PHASE1_MOVES.iter().enumerate() {
-            if skip.contains(&i) {
-                continue;
+        // Solved is in every target, so reaching it takes at least the
+        // largest phase 1 distance. The search is bound by table loads, so
+        // children are loaded in two passes: first the target with the largest
+        // distance here, which alone prunes most children, then the other
+        // three only for the children it didn't prune. Each pass's loads are
+        // issued with no branches on them, letting them overlap.
+        let moves = &FRAMES.moves;
+        let p1 = &self.tables.p1;
+        let decode = d.map(child_distances);
+        let kp = (0..4).max_by_key(|&k| d[k]).unwrap();
+        let bound = self.bound();
+        let mut cc = [[P1::solved(); 4]; 28];
+        let mut dd = [[0u8; 4]; 28];
+        // pass 1, in its own contiguous arrays
+        let mut pc = [P1::solved(); 28];
+        let mut pi = [0; 28];
+        for i in 0..28 {
+            pc[i] = c[kp].apply_p1(&moves[i][kp]);
+            pi[i] = pc[i].index();
+        }
+        for i in 0..28 {
+            dd[i][kp] = decode[kp][p1.get(pi[i]) as usize];
+            cc[i][kp] = pc[i];
+        }
+        let mut surv = [0u8; 28];
+        let mut n = 0;
+        for i in 0..28 {
+            surv[n] = i as u8;
+            n += (!skip.contains(&i) && g + 1 + (dd[i][kp] as usize) < bound) as usize;
+        }
+        let surv = &surv[..n];
+        // pass 2
+        for &i in surv {
+            for k in (0..4).filter(|&k| k != kp) {
+                cc[i as usize][k] = c[k].apply_p1(&moves[i as usize][k]);
             }
-            // solved is in every target, so reaching it takes at least the
-            // largest phase 1 distance; and some target must still be
-            // reachable within its phase 1 budget.
+        }
+        for &i in surv {
+            for k in (0..4).filter(|&k| k != kp) {
+                dd[i as usize][k] = decode[k][p1.get(cc[i as usize][k].index()) as usize];
+            }
+        }
+        for &i in surv {
+            let i = i as usize;
+            // the bound may have dropped in an earlier sibling's subtree
             let worst = *dd[i].iter().max().unwrap() as usize;
             if g + 1 + worst >= self.bound() {
                 continue;
             }
+            // some target must still be reachable within its budget
             if !(0..4).any(|k| g + 1 + dd[i][k] as usize <= self.budget[k] as usize) {
                 continue;
             }
+            let m = &PHASE1_MOVES[i];
             self.path.push(m.twist);
             self.dfs(cc[i], dd[i], p2.apply(m));
             self.path.pop();
@@ -351,6 +369,7 @@ pub fn solve(
         nodes: 0,
         limit: max.map_or(usize::MAX, |m| m + 1),
         first: max.is_some(),
+        last: false,
     };
     // shortest phase 1 lengths first, so good totals prune the longer rounds
     let mut proved = false;
@@ -365,8 +384,16 @@ pub fn solve(
             proved = true;
             break;
         }
+        // Once some budget reaches bound - 1, every child within the bound is
+        // within that budget, so every later round would walk this same tree.
+        // Walk it once, finishing every longer phase 1 too.
+        search.last = search.budget.iter().any(|&b| b as usize + 1 >= search.bound());
         search.dfs(c, d, P2::from_state(&s));
         if search.first && search.best.is_some() {
+            break;
+        }
+        if search.last {
+            proved = true;
             break;
         }
     }
