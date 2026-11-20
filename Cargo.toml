@@ -2,6 +2,7 @@
 name = "four2four2"
 version = "0.1.0"
 edition = "2024"
+default-run = "four2four2"
 
 [dependencies]
 clap = { version = "4.6.8", features = ["derive"] }

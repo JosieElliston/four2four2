@@ -12,6 +12,10 @@ use crate::twist::{ParseTwistError, Twist, parse_hsc_twists};
 pub const PUZZLE_ID: &str = "ft_polygonal_duoprism:4,4,2,2";
 pub const PUZZLE_VERSION: &str = "1.0.1";
 
+/// The same puzzle in Hyperspeedcube after 2.0.0-zeta.12, where duoprisms are
+/// products of polygons. See [`port_to_latest`].
+pub const LATEST_PUZZLE_ID: &str = "product@1([ngon_ft_shallow(4,2),ngon_ft_shallow(4,2)])";
+
 #[derive(Clone, Debug, Default)]
 pub struct Solve {
     pub puzzle_id: String,
@@ -33,6 +37,10 @@ pub enum Error {
     NoScrambleTwists,
     NoSolve,
     WrongPuzzle(String),
+    /// A log file version other than the one 2.0.0-zeta.12 writes.
+    UnsupportedVersion(String),
+    /// A node every log has, such as `version`, is missing.
+    MissingNode(&'static str),
     Syntax {
         line: usize,
         msg: String,
@@ -46,6 +54,10 @@ impl fmt::Display for Error {
             Error::NoScrambleTwists => write!(f, "scramble has no literal twist list"),
             Error::NoSolve => write!(f, "no `solve` block"),
             Error::WrongPuzzle(id) => write!(f, "puzzle is {id:?}, expected {PUZZLE_ID:?}"),
+            Error::UnsupportedVersion(v) => {
+                write!(f, "log file version is {v}, expected 2 (2.0.0-zeta.12)")
+            }
+            Error::MissingNode(name) => write!(f, "no `{name}` node"),
             Error::Syntax { line, msg } => write!(f, "line {line}: {msg}"),
         }
     }
@@ -189,6 +201,48 @@ pub fn write(scramble: &[Twist], solution: &[Twist]) -> String {
     s
 }
 
+/// Converts a 2.0.0-zeta.12 log of this puzzle to the format of later
+/// Hyperspeedcube versions: log file version 3, [`LATEST_PUZZLE_ID`], and twist
+/// axes renamed from `ε`/`η` to `a`/`b`.
+///
+/// Everything else, including replay events, is kept as-is. The converted twists
+/// were checked to reach the same states in Hyperspeedcube at commit `65fecbd8`
+/// (a solved log stays solved), so the axis renaming preserves meaning.
+pub fn port_to_latest(text: &str) -> Result<String, Error> {
+    let mut saw_version = false;
+    let mut saw_puzzle = false;
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let indent = &line[..line.len() - trimmed.len()];
+        if let Some(version) = trimmed.strip_prefix("version ") {
+            let version = version.trim();
+            if version != "2" {
+                return Err(Error::UnsupportedVersion(version.to_owned()));
+            }
+            saw_version = true;
+            writeln!(out, "{indent}version 3").unwrap();
+        } else if trimmed.starts_with("puzzle ") {
+            let id = prop(trimmed, "id").unwrap_or_default();
+            if id != PUZZLE_ID {
+                return Err(Error::WrongPuzzle(id.to_owned()));
+            }
+            saw_puzzle = true;
+            writeln!(out, "{indent}puzzle id=\"{LATEST_PUZZLE_ID}\" version=\"\"").unwrap();
+        } else {
+            out += &line.replace('ε', "a").replace('η', "b");
+            out += "\n";
+        }
+    }
+    if !saw_version {
+        return Err(Error::MissingNode("version"));
+    }
+    if !saw_puzzle {
+        return Err(Error::MissingNode("puzzle"));
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +310,29 @@ solve {
     fn seed_only_scramble_is_rejected() {
         let text = SAMPLE.replace("        twists \"εA_εB ηA_εB\"\n", "");
         assert!(matches!(parse(&text), Err(Error::NoScrambleTwists)));
+    }
+
+    #[test]
+    fn port_to_latest_renames_puzzle_and_axes() {
+        let ported = port_to_latest(SAMPLE).unwrap();
+        assert!(ported.contains("\nversion 3\n"));
+        assert!(ported.contains(&format!(
+            "    puzzle id=\"{LATEST_PUZZLE_ID}\" version=\"\"\n"
+        )));
+        assert!(ported.contains("        twists \"aA_aB bA_aB\"\n"));
+        assert!(ported.contains("target=aB_aA"));
+        assert!(!ported.contains(['ε', 'η']));
+        assert_eq!(ported.lines().count(), SAMPLE.lines().count());
+    }
+
+    #[test]
+    fn port_to_latest_rejects_other_logs() {
+        let ported = port_to_latest(SAMPLE).unwrap();
+        assert!(matches!(
+            port_to_latest(&ported),
+            Err(Error::UnsupportedVersion(v)) if v == "3"
+        ));
+        let other = SAMPLE.replace(PUZZLE_ID, "ft_cube:3");
+        assert!(matches!(port_to_latest(&other), Err(Error::WrongPuzzle(_))));
     }
 }

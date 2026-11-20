@@ -5,7 +5,7 @@
 //!
 //! - `εA_εB`: same-ring neighbor. Quarter turn of the *other* ring's plane:
 //!   +first axis ↦ -second axis (εA_εB sends ηA to ηD). `εA_εD` is the inverse.
-//!   This sign was found by replaying HSC logs (see `tests/data/`); the other sign
+//!   This sign was found by replaying HSC logs (see `assets/stm35.hsc`); the other sign
 //!   replays every log to garbage.
 //! - `εA_ηA`: other-ring cell. 180° turn fixing both axes. `εA_ηA` and `εA_ηC`
 //!   are the same twist.

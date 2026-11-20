@@ -12,7 +12,7 @@ the {4}x{4} duoprism has two rings of square prisms: `R`/`F`/`L`/`B` and `U`/`I`
 
 # method
 
-the purple pieces are hidden.
+pieces without a purple sticker are drawn translucent.
 
 ## human
 
@@ -119,9 +119,14 @@ both tables are built by a parallel breadth-first search with a byte per entry, 
 ```sh
 cargo run -r -- solve in.hsc out.hsc   # solve a log's scramble, write the solution as a log
 cargo run -r -- bench -n 1000          # solve random 1000-twist scrambles, print lengths
-cargo test                             # replays tests/data/stm35.hsc
+cargo run -r --bin port-log -- in.hsc out.hsc  # convert a zeta-12 log to the latest hsc2 format
+cargo test                             # replays assets/stm35.hsc
 cargo test -r -- --ignored             # also solves its scramble (needs the tables)
 ```
+
+logs are read and written in the hsc2 2.0.0-zeta.12 format (`ft_polygonal_duoprism:4,4,2,2`, axes `ε`/`η`). later hsc2 versions call the puzzle `product@1([ngon_ft_shallow(4,2),ngon_ft_shallow(4,2)])` with axes `a`/`b`; `port-log` converts.
+
+the images in `assets/` are built by `HSC=path/to/hyperspeedcube assets/build-assets.sh`, from `assets/stm35.hsc` and the views in `assets/draw/` (exported with the image generator's "Export draw file" button). it needs `hyperspeedcube render`, which as of 2026-11-20 02:37 UTC is only on the `render-cli` branch of JosieElliston/Hyperspeedcube, not upstream. the method steps are listed in the script by action (undo step), not STM; `render` prints the STM at each action.
 
 logs are read for their literal scramble twists; scrambles given only by seed are rejected. stm is counted the way hsc2 counts it (runs of consecutive twists on the same cell), which matches the `stmN` in hsc2's log filenames.
 

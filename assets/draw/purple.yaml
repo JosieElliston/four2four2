@@ -1,0 +1,65 @@
+puzzle: product@1([ngon_ft_shallow(4,2),ngon_ft_shallow(4,2)])
+width: 1024
+height: 1024
+camera:
+  view:
+    view_scale: 1.0
+    fov_3d: 0.0
+    fov_4d: 60.0
+    show_frontfaces: true
+    show_backfaces: false
+    show_behind_4d_camera: false
+    show_internals: false
+    outline_scale: 0.5
+    gizmo_scale: 1.0
+    facet_shrink: 0.7
+    sticker_shrink: 0.3
+    piece_explode: 0.0
+    light_pitch: 65.0
+    light_yaw: -55.0
+    face_light_intensity: 1.0
+    outline_light_intensity: 1.0
+    downscale_rate: 1
+    downscale_interpolate: true
+  rot:
+    s: 0.6729299678688685
+    xy: 0.036038892845581184
+    xz: -0.16157049685953234
+    yz: -0.14057535733902676
+    xw: 0.6729299678688675
+    yw: -0.03603889284558118
+    zw: 0.16157049685953204
+    xyzw: -0.1405753573390265
+  zoom: 0.78728646
+internals_color: '#444444'
+colors:
+  aA: '#ffffff'
+  aB: '#8822cc'
+  aC: '#ffff00'
+  aD: '#ff66ff'
+  bA: '#cc3333'
+  bB: '#88ee66'
+  bC: '#ff9922'
+  bD: '#33aaff'
+styles:
+- pieces: '@everything'
+  style:
+    face_opacity: 102
+    face_color:
+      mode: sticker
+    outline_opacity: 0
+    outline_color:
+      mode: sticker
+    outline_lighting: false
+    outline_size: 0.0
+- pieces: aB
+  style:
+    face_opacity: 255
+    face_color:
+      mode: sticker
+    outline_opacity: 255
+    outline_color:
+      mode: fixed
+      color: '#000000'
+    outline_lighting: false
+    outline_size: 0.25

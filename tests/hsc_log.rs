@@ -5,7 +5,7 @@ use std::path::Path;
 
 use four2four2::{hsc, state::State, twist};
 
-const LOG: &str = include_str!("data/stm35.hsc");
+const LOG: &str = include_str!("../assets/stm35.hsc");
 
 #[test]
 fn log_replays_to_solved() {
