@@ -43,7 +43,9 @@ to find god's number for phase 2 under the full moveset, we take the phase 2 sta
 
 except i only got down to 15 STM bc 33.07M states is a bit much.
 
-this gives god's number for phase 2 under the full moveset as <= 15 STM.
+also we have a state that takes 14 STM.
+
+this gives god's number for phase 2 under the full moveset as either 14 or 15 STM.
 
 ## full puzzle
 

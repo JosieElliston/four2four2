@@ -12,21 +12,23 @@ the {4}x{4} duoprism has two rings of square prisms: `R`/`F`/`L`/`B` and `U`/`I`
 
 # method
 
-pieces without a purple sticker are drawn translucent.
+pieces without a purple sticker (ie with a pink sticker) are drawn translucent.
 
 ## human
 
-when scrambled, it looks like ![scrambled](assets/0_scrambled.png)
+![human method](assets/human.png)
 
-the human method has four steps. first we solve the pink outer `O` stickers intuitively: ![f2l](assets/1_f2l.png)
+the human method has four steps. first we solve the pink outer `O` stickers intuitively.
 
-then we orient the purple inner `I` cell with some short algorithms (variants of sune): ![oll](assets/2_oll.png)
+then we orient the purple inner `I` cell with some short algorithms (variants of sune).
 
-then we separate the white/yellow `U`/`D` cells with some triggers (actually we solve this in two steps, first separating white/yellow `O` pieces, then use variants of `RO2 I* RO2` to separate white/yellow `I` pieces while preserving `O` separation): ![separation](assets/3_separation.png)
+then we separate the white/yellow `U`/`D` cells with some triggers (actually we solve this in two steps, first separating white/yellow `O` pieces, then use variants of `RO2 I* RO2` to separate white/yellow `I` pieces while preserving `O` separation).
 
-then we solve the rest of the puzzle, using PLB algorithms and `I*` twists: ![solved](assets/4_solved.png)
+then we solve the rest of the puzzle, using PLB algorithms and `I*` twists.
 
 ## computer
+
+![computer method](assets/computer.png)
 
 the computer method instead uses just two phases: phase 1 goes from scrambled to oll (`I` on `I`, `O` on `O`, `U`/`D` on `U`/`D`), and phase 2 goes from oll to solved.
 
@@ -126,7 +128,7 @@ cargo test -r -- --ignored             # also solves its scramble (needs the tab
 
 logs are read and written in the hsc2 2.0.0-zeta.12 format (`ft_polygonal_duoprism:4,4,2,2`, axes `ε`/`η`). later hsc2 versions call the puzzle `product@1([ngon_ft_shallow(4,2),ngon_ft_shallow(4,2)])` with axes `a`/`b`; `port-log` converts.
 
-the images in `assets/` are built by `HSC=path/to/hyperspeedcube assets/build-assets.sh`, from `assets/stm35.hsc` and the views in `assets/draw/` (exported with the image generator's "Export draw file" button). it needs `hyperspeedcube render`, which as of 2026-11-20 02:37 UTC is only on the `render-cli` branch of JosieElliston/Hyperspeedcube, not upstream. the method steps are listed in the script by action (undo step), not STM; `render` prints the STM at each action.
+the images in `assets/` are built by `assets/build-assets.py` (set `HSC` to the hyperspeedcube binary if it isn't at the script's default path), from `assets/stm35.hsc` and the views in `assets/draw/` (exported with the image generator's "Export draw file" button). it needs `hyperspeedcube render`, which as of 2026-11-20 02:37 UTC is only on the `render-cli` branch of JosieElliston/Hyperspeedcube, not upstream. frames are rendered at the draw files' 4096² and shrunk to 2048², since hsc2 doesn't antialias. the method steps are listed in the script by action (undo step), not STM; `render` prints the STM at each action.
 
 logs are read for their literal scramble twists; scrambles given only by seed are rejected. stm is counted the way hsc2 counts it (runs of consecutive twists on the same cell), which matches the `stmN` in hsc2's log filenames.
 

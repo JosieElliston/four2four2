@@ -1,6 +1,6 @@
 puzzle: product@1([ngon_ft_shallow(4,2),ngon_ft_shallow(4,2)])
-width: 1024
-height: 1024
+width: 4096
+height: 4096
 camera:
   view:
     view_scale: 1.0
