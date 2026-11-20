@@ -33,21 +33,27 @@ SIZE = 2048
 CAPTION_PX = SIZE // 16
 CAPTION_COLOR = (136, 136, 136, 255)  # mid gray: readable on GitHub's light and dark themes
 
-# Human method, from a 35 STM solve. An action is one undo step after the
-# scramble, so it differs from the STM count shown in hsc2's status bar; the STM
-# at each action is in `render`'s output. Where several actions share an STM,
-# the step uses the last one.
-STEPS = {  # caption: action
-    "scrambled": 0,
-    "f2l": 16,  # STM 11
-    "oll": 29,  # STM 22
-    "separation": 33,  # STM 26
-    "solved": 43,  # STM 35
-}
+# Each strip is frames of one solve log: (log, {caption: action}). An action is
+# one undo step after the scramble, so it can differ from the STM count: hsc2's
+# status bar merges consecutive twists of one cell, and a human log has
+# rotations too. Where several actions share an STM, the step uses the last one.
 STRIPS = {
-    "human": ["scrambled", "f2l", "oll", "separation", "solved"],
-    # The computer method's phase 1 ends in oll too, so it reuses those frames.
-    "computer": ["scrambled", "oll", "solved"],
+    # Human method, from a 35 STM human solve; the STM at each action is in
+    # `render`'s output.
+    "human": (
+        "stm35.hsc",
+        {
+            "scrambled": 0,
+            "f2l": 16,  # STM 11
+            "oll": 29,  # STM 22
+            "separation": 33,  # STM 26
+            "solved": 43,  # STM 35
+        },
+    ),
+    # Computer method, from the solver's `--depth 0` solve of the same scramble
+    # (8 + 14 STM, 23 twists). why depth 0? optimal solves spend nearly all
+    # their twists in phase 1, so their oll frame is almost solved.
+    "computer": ("computer.hsc", {"scrambled": 0, "oll": 8, "solved": 23}),
 }
 
 
@@ -85,18 +91,24 @@ def main() -> None:
         tmp = Path(tmp)
         render(ASSETS / "draw/unfiltered.yaml", tmp / "solved.png").save(ASSETS / "solved.png", optimize=True)
 
-        log = tmp / "stm35.hsc"
-        subprocess.run([ROOT / "target/release/port-log", ASSETS / "stm35.hsc", log], check=True)
-        frames = {}
-        for caption, action in STEPS.items():
-            # `--align-to-end` undoes the whole-puzzle rotation that the solve
-            # ends with, so the frames match solved.png.
-            frames[caption] = render(
-                ASSETS / "draw/purple.yaml", tmp / f"{caption}.png", str(log), "--action", str(action), "--align-to-end"
-            )
-
-        for name, captions in STRIPS.items():
-            strip([frames[c] for c in captions], captions).save(ASSETS / f"{name}.png", optimize=True)
+        for name, (src, steps) in STRIPS.items():
+            log = tmp / src
+            subprocess.run([ROOT / "target/release/port-log", ASSETS / src, log], check=True)
+            # `--align-to-end` undoes the whole-puzzle rotation the solve ends
+            # in (a human's rotations, or the solver's fixed corner), so the
+            # frames match solved.png.
+            frames = [
+                render(
+                    ASSETS / "draw/purple.yaml",
+                    tmp / f"{name}-{caption}.png",
+                    str(log),
+                    "--action",
+                    str(action),
+                    "--align-to-end",
+                )
+                for caption, action in steps.items()
+            ]
+            strip(frames, list(steps)).save(ASSETS / f"{name}.png", optimize=True)
 
         # A phase 2 antipode (21 STM in the reduced moveset), drawn before its solution.
         log = tmp / "antipode-p2.hsc"

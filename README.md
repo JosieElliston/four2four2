@@ -1,24 +1,26 @@
 # README
 
-this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions see [antipode](antipode.md) for the exploration of god's number.
+this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions of ~14 STM in ~10 s. see [antipode](antipode.md) for the exploration of god's number.
 
 ![solved](assets/solved.png)
 
 images from [hsc2](https://github.com/hactarCE/Hyperspeedcube/).
 
-for pedagogy, i use the standard 3^4 [notation](https://hypercubing.xyz/notation/), color scheme, and orientation (red on `R`, orange on `L`, white on `U`, yellow on `D`, green on `F`, blue on `B`, pink on `O`, purple on `I`). note that the solver uses a different orientation and notation internally, the same as hsc2.
+for pedagogy, i use the standard 3^4 [notation](https://hypercubing.xyz/notation/), color scheme, and orientation (red on `R`, orange on `L`, white on `U`, yellow on `D`, green on `F`, blue on `B`, pink on `O`, purple on `I`). note that the solver uses a different orientation and notation internally, the same ones as hsc2.
 
 the {4}x{4} duoprism has two rings of square prisms: `R`/`F`/`L`/`B` and `U`/`I`/`D`/`O`.
 
 # method
 
-pieces without a purple sticker (ie with a pink sticker) are drawn translucent.
+pieces without a purple sticker / with a pink sticker are drawn translucent.
 
 ## human
 
+the human method has four steps:
+
 ![human method](assets/human.png)
 
-the human method has four steps. first we solve the pink outer `O` stickers intuitively.
+first we solve the pink outer `O` stickers intuitively.
 
 then we orient the purple inner `I` cell with some short algorithms (variants of sune).
 
@@ -28,9 +30,9 @@ then we solve the rest of the puzzle, using PLB algorithms and `I*` twists.
 
 ## computer
 
-![computer method](assets/computer.png)
+the computer method instead uses just two phases: phase 1 goes from scrambled to oll (`I` on `I`, `O` on `O`, `U`/`D` on `U`/`D`), and phase 2 goes from oll to solved:
 
-the computer method instead uses just two phases: phase 1 goes from scrambled to oll (`I` on `I`, `O` on `O`, `U`/`D` on `U`/`D`), and phase 2 goes from oll to solved.
+![computer method](assets/computer.png)
 
 we hold the all-positive piece (the corner on `εA εB ηA ηB`) fixed, and only twist the four negative cells `εC`, `εD`, `ηC`, `ηD`, for `4 * (8-1) = 28` non-identity twists.
 
@@ -62,7 +64,7 @@ instead of only considering the optimal child, we also have some additional dept
 
 ## more pruning
 
-each higher depth takes about `NUM_TWISTS = 28` slower, so we need more pruning.
+each higher depth is about `NUM_TWISTS = 28` slower, so we need more pruning.
 
 the insight is that a full solution must simultaneously solve all four symmetric oll targets.
 

@@ -4,7 +4,7 @@ we fully understand each of the phases; we have bounds for the full puzzle
 
 ## phase 1
 
-god's number for phase 1 is 10 STM, taken from the pruning table. here's the (exact) histogram of STM from a random state:
+god's number for phase 1 is 10 STM, taken from the pruning table. here's the (exact) histogram of STM over all cosets:
 
 | STM | cosets |
 |---|---|
@@ -20,7 +20,7 @@ god's number for phase 1 is 10 STM, taken from the pruning table. here's the (ex
 | 9 | 16,157,124 |
 | 10 | 2,744 |
 
-mean 7.95 STM.
+with mean 7.95 STM.
 
 and here's an example of an antipode, chosen for having a nice solution, alternating `ε`-cell twists and `ηD_εA_εD`:
 
@@ -42,7 +42,7 @@ the combinatorial lower bound is 7 STM: 1.05e8 positions.
 
 ## phase 2 (reduced moveset)
 
-god's number for phase 2 under the reduced moveset is 21 STM, taken from the pruning table. here's the (exact) histogram of STM from a random state:
+god's number for phase 2 under the reduced moveset is 21 STM, taken from the pruning table. here's the (exact) histogram of STM over all positions:
 
 | STM | positions |
 |---|---|
@@ -69,7 +69,7 @@ god's number for phase 2 under the reduced moveset is 21 STM, taken from the pru
 | 20 | 637,632 |
 | 21 | 13,280 |
 
-mean 16.18 STM.
+with mean 16.18 STM.
 
 let's get an example of an antipode. as there's 13,280, let's select a pretty one.
 
@@ -108,7 +108,7 @@ the symmetries: conjugate by any of the 16 sign flips, optionally composed with 
 
 the cost grows about 10x per unit of T (T=11: 2 min, 1.28M leftovers). so T=12 plus solving the leftovers is much cheaper than T=14 alone, and also much cheaper than solving all 101.6M states one at a time.
 
-exact histogram up to 12 STM. the remaining 46,252,268 states take 13 or 14, and splitting them needs T = 13 (about 3.5 h):
+here's the exact histogram up to 12 STM. the remaining 46,252,268 states take 13 or 14, and splitting them needs T = 13 (about 3.5 h):
 
 | STM | positions |
 |---|---|
