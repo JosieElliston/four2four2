@@ -86,17 +86,19 @@ the search is bound by phase 1 table loads, and finding that out took a load per
 
 ## runtime
 
-the runtime in this chart is a bit funny bc a solve stops at the round where some oll target's phase 1 budget reaches one less than the best full solution found, so a depth 3 solve might have terminated at depth 2.
+the runtime in this chart is a bit funny bc a solve stops at the round where some oll target's phase 1 budget reaches one less than the best full solution found, so a depth 3 solve might have terminated at depth 2. no solve here needed more than depth 6, so depth 6 is the optimal solver. "optimal" is how many solves already have the optimal length.
 
-| `--depth` | n | phase 1 STM | phase 2 STM | total STM | range | time |
+| `--depth` | phase 1 STM | phase 2 STM | total STM | range | optimal | time |
 |---|---|---|---|---|---|---|
-| 0 | 1000 | 8.10 | 11.85 | 19.95 | 14–24 | 0.27 ms |
-| 1 | 1000 | 8.99 | 8.83 | 17.82 | 12–21 | 6.2 ms |
-| 2 | 1000 | 9.93 | 6.21 | 16.14 | 12–20 | 71 ms |
-| 3 | 1000 | 10.85 | 4.10 | 14.95 | 12–17 | 0.41 s |
-| optimal | 100 | 11.70 | 2.25 | 13.95 | 12–15 | 2.1 s |
+| 0 | 8.14 | 11.82 | 19.95 | 14–24 | 0.4% | 0.25 ms |
+| 1 | 9.00 | 8.82 | 17.82 | 12–21 | 2.0% | 6.1 ms |
+| 2 | 9.94 | 6.20 | 16.14 | 12–20 | 10% | 70 ms |
+| 3 | 10.85 | 4.10 | 14.95 | 12–17 | 36% | 0.41 s |
+| 4 | 11.58 | 2.64 | 14.22 | 12–16 | 78% | 1.1 s |
+| 5 | 11.91 | 2.08 | 13.99 | 12–15 | 99.3% | 1.7 s |
+| 6 (optimal) | 11.93 | 2.06 | 13.98 | 12–15 | 100% | 2.0 s |
 
-measured with `bench -n N --seed 0` on an apple m5.
+measured with `cargo run -r --example depths 1000` on an apple m5, over the scrambles of `bench -n 1000 --seed 0`. `--depth d` runs exactly the first d + 1 rounds of the optimal search, so `depths` solves each scramble once, to optimal, and reads every row off the rounds.
 
 # tables
 

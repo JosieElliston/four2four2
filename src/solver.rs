@@ -3,6 +3,7 @@
 //! own; the total is not.
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 use std::sync::LazyLock;
 
 use crate::coord::{self, Coord, P1, P1Move, P2, PHASE1_MOVES, PHASE2_MOVES, SlotMove};
@@ -10,7 +11,7 @@ use crate::geom::Rot;
 use crate::grips::{self, Grips};
 use crate::state::State;
 use crate::table::{self, Mod3, Nibbles};
-use crate::twist::{Twist, simplify};
+use crate::twist::{Twist, hsc_stm, simplify};
 
 pub struct Tables {
     pub p1: Mod3,
@@ -240,6 +241,22 @@ pub struct Solution {
     pub target: usize,
     /// Search nodes visited.
     pub nodes: u64,
+    /// The best solution after each round that ran.
+    pub rounds: Vec<Round>,
+}
+
+/// The best solution after one round of [`solve`]'s search, which is what
+/// `solve` returns with `depth` at least `extra`, up to the next round's
+/// `extra`.
+#[derive(Clone, Debug)]
+pub struct Round {
+    pub extra: u8,
+    pub stm: usize,
+    pub phase1: usize,
+    pub phase2: usize,
+    /// Nodes and time so far, from the start of `solve`.
+    pub nodes: u64,
+    pub time: Duration,
 }
 
 impl Solution {
@@ -422,6 +439,7 @@ pub fn solve(
     depth: Option<u8>,
     max: Option<usize>,
 ) -> Result<Solution, NoSolution> {
+    let t0 = Instant::now();
     let frames = &*FRAMES;
     // rotate piece 0 home; the search works in that frame
     let rot = coord::normalizing_rotation(state);
@@ -441,6 +459,7 @@ pub fn solve(
     };
     // shortest phase 1 lengths first, so good totals prune the longer rounds
     let mut proved = false;
+    let mut rounds = vec![];
     for extra in 0..=depth.unwrap_or(u8::MAX) {
         search.budget = d.map(|x| x.saturating_add(extra));
         // A round only finds totals of at least its smallest budget. Once
@@ -457,6 +476,18 @@ pub fn solve(
         // Walk it once, finishing every longer phase 1 too.
         search.last = search.budget.iter().any(|&b| b as usize + 1 >= search.bound());
         search.dfs(c, d, P2::from_state(&s));
+        if let Some(best) = &search.best {
+            let time = t0.elapsed();
+            let sol = finish(tables, &s, rot, best);
+            rounds.push(Round {
+                extra,
+                stm: hsc_stm(&sol.twists()),
+                phase1: sol.phase1.len(),
+                phase2: sol.phase2.len(),
+                nodes: search.nodes,
+                time,
+            });
+        }
         if search.first && search.best.is_some() {
             break;
         }
@@ -466,14 +497,24 @@ pub fn solve(
         }
     }
 
-    let Some(best) = search.best else {
+    let Some(best) = &search.best else {
         return Err(NoSolution {
             proved,
             nodes: search.nodes,
         });
     };
+    Ok(Solution {
+        nodes: search.nodes,
+        rounds,
+        ..finish(tables, &s, rot, best)
+    })
+}
+
+/// `best` as a solution of `s`, which is the original state rotated by
+/// `rot`. Twists are in the original frame.
+fn finish(tables: &Tables, s: &State, rot: Rot, best: &Best) -> Solution {
     let k = best.target;
-    let unsym = frames.syms[k].inverse();
+    let unsym = FRAMES.syms[k].inverse();
     let mut phase2 = vec![];
     p2_distance(tables, best.p2, usize::MAX, Some(&mut phase2));
     let phase2: Vec<Twist> = phase2.into_iter().map(|t| t.conjugated(unsym)).collect();
@@ -484,12 +525,13 @@ pub fn solve(
 
     let back = rot.inverse();
     let to_original = |ts: &[Twist]| ts.iter().map(|t| t.conjugated(back)).collect();
-    Ok(Solution {
+    Solution {
         phase1: to_original(&best.phase1),
         phase2: to_original(&phase2),
         target: k,
-        nodes: search.nodes,
-    })
+        nodes: 0,
+        rounds: vec![],
+    }
 }
 
 #[cfg(test)]
