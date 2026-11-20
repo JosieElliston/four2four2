@@ -2,7 +2,7 @@
 # /// script
 # dependencies = ["pillow"]
 # ///
-"""Renders the README images in assets/ from log files and the draw files in
+"""Renders the README and antipode.md images in assets/ from log files and the draw files in
 assets/draw/ (exported from hsc2's image generator).
 
 Needs a hyperspeedcube binary with the `render` subcommand: set HSC to its path.
@@ -97,6 +97,13 @@ def main() -> None:
 
         for name, captions in STRIPS.items():
             strip([frames[c] for c in captions], captions).save(ASSETS / f"{name}.png", optimize=True)
+
+        # A phase 2 antipode (21 STM in the reduced moveset), drawn before its solution.
+        log = tmp / "antipode-p2.hsc"
+        subprocess.run([ROOT / "target/release/port-log", ASSETS / "antipode-p2.hsc", log], check=True)
+        render(ASSETS / "draw/unfiltered.yaml", tmp / "antipode-p2.png", str(log), "--action", "0").save(
+            ASSETS / "antipode-p2.png", optimize=True
+        )
 
 
 if __name__ == "__main__":

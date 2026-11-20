@@ -6,7 +6,21 @@ we fully understand each of the phases; we have bounds for the full puzzle
 
 god's number for phase 1 is 10 STM, taken from the pruning table. here's the (exact) histogram of STM from a random state:
 
-TODO: histogram
+| STM | cosets |
+|---|---|
+| 0 | 1 |
+| 1 | 7 |
+| 2 | 82 |
+| 3 | 1,139 |
+| 4 | 13,826 |
+| 5 | 167,270 |
+| 6 | 1,828,057 |
+| 7 | 17,314,194 |
+| 8 | 69,946,596 |
+| 9 | 16,157,124 |
+| 10 | 2,744 |
+
+mean 7.95 STM.
 
 and here's an example of an antipode, chosen for having a nice solution, alternating `ε`-cell twists and `ηD_εA_εD`:
 
@@ -30,14 +44,44 @@ the combinatorial lower bound is 7 STM: 1.05e8 positions.
 
 god's number for phase 2 under the reduced moveset is 21 STM, taken from the pruning table. here's the (exact) histogram of STM from a random state:
 
-TODO: histogram
+| STM | positions |
+|---|---|
+| 0 | 1 |
+| 1 | 12 |
+| 2 | 57 |
+| 3 | 219 |
+| 4 | 766 |
+| 5 | 2,253 |
+| 6 | 6,572 |
+| 7 | 19,300 |
+| 8 | 54,228 |
+| 9 | 143,564 |
+| 10 | 356,840 |
+| 11 | 847,364 |
+| 12 | 1,907,800 |
+| 13 | 3,998,040 |
+| 14 | 7,922,504 |
+| 15 | 14,752,472 |
+| 16 | 23,319,352 |
+| 17 | 25,929,896 |
+| 18 | 16,525,576 |
+| 19 | 5,168,672 |
+| 20 | 637,632 |
+| 21 | 13,280 |
 
-and here's an example of an antipode, none of which are geometrically symmetric:
+mean 16.18 STM.
 
-TODO: look harder for symmetric ones, like having U or D or I or O symmetric rather than the entire state
+let's get an example of an antipode. as there's 13,280, let's select a pretty one.
 
-TODO: log file
-TODO: screenshot
+no antipode is geometrically symmetric, so instead we look for nice sticker patterns. we first take the oll positions where stickers of each axis stay in their axis; 64 of them are antipodes.
+
+on those 64, each face of the `I` and `O` cells (2x2, two colors) is one of: 3 of its own color and 1 of the opposite, 1 and 3, or 2 and 2 as bars. solid and checkerboard faces never occur (on antipodes), and opposite faces always have the same type (on antipodes). the most symmetric ones have all faces of `I` the same type and all faces of `O` the same type. there are 14, and all of them are the same position up to symmetry and inversion.
+
+[here's one](assets/antipode-p2.hsc), with every face of `I` 3+1 and every face of `O` a bar:
+
+![phase 2 antipode](assets/antipode-p2.png)
+
+it is not an antipode under the full moveset: it takes only 11 STM there.
 
 the combinatorial lower bound is 11 STM: 1.02e8 positions, 12 twists.
 
@@ -66,9 +110,21 @@ the cost grows about 10x per unit of T (T=11: 2 min, 1.28M leftovers). so T=12 p
 
 exact histogram up to 12 STM. the remaining 46,252,268 states take 13 or 14, and splitting them needs T = 13 (about 3.5 h):
 
-| STM | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| states | 1 | 12 | 57 | 219 | 770 | 2,481 | 9,588 | 45,020 | 209,316 | 858,878 | 3,400,098 | 13,026,096 | 37,801,616 |
+| STM | positions |
+|---|---|
+| 0 | 1 |
+| 1 | 12 |
+| 2 | 57 |
+| 3 | 219 |
+| 4 | 770 |
+| 5 | 2,481 |
+| 6 | 9,588 |
+| 7 | 45,020 |
+| 8 | 209,316 |
+| 9 | 858,878 |
+| 10 | 3,400,098 |
+| 11 | 13,026,096 |
+| 12 | 37,801,616 |
 
 the combinatorial lower bound is 7 STM: the same positions as reduced phase 2, but with all 28 twists.
 
