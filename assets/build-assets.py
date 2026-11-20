@@ -56,6 +56,9 @@ STRIPS = {
     "computer": ("computer.hsc", {"scrambled": 0, "oll": 8, "solved": 23}),
 }
 
+# Phase 2 full-moveset antipodes in antipode.md: assets/antipode-p2-full-{name}.hsc -> caption.
+FULL_ANTIPODES = {"double": "double antipode", "5cycle": "5-cycle", "swaps": "4 swaps"}
+
 
 def render(draw: Path, out: Path, *args: str) -> Image.Image:
     p = subprocess.run(
@@ -116,6 +119,14 @@ def main() -> None:
         render(ASSETS / "draw/unfiltered.yaml", tmp / "antipode-p2.png", str(log), "--action", "0").save(
             ASSETS / "antipode-p2.png", optimize=True
         )
+
+        # Antipodes of phase 2 with the full moveset (14 STM), drawn before their solutions.
+        frames = []
+        for name in FULL_ANTIPODES:
+            log = tmp / f"antipode-p2-full-{name}.hsc"
+            subprocess.run([ROOT / "target/release/port-log", ASSETS / log.name, log], check=True)
+            frames.append(render(ASSETS / "draw/unfiltered.yaml", tmp / f"{log.stem}.png", str(log), "--action", "0"))
+        strip(frames, list(FULL_ANTIPODES.values())).save(ASSETS / "antipode-p2-full.png", optimize=True)
 
 
 if __name__ == "__main__":

@@ -94,9 +94,6 @@ god's number for phase 2 under the full moveset is 14 STM. the method is the one
 3. **the leftovers.** 75,584 states have an upper bound above 14. reduce them under the 64 symmetries that preserve H (below), get 2,262 orbits. run the optimal solver with `--max 14` on one state per orbit. all of them solve in at most 14. 5 min.
 4. **tightness.** some states take exactly 14: eg P2 index 209, where the optimal solver finds 14 and `--max 13` proves nothing shorter exists. (the optional step below finds all 2,985,984 of them.)
 
-TODO: log file
-TODO: screenshot
-
 to rerun, with `cargo build --release --examples` first:
 
 ```
@@ -107,8 +104,11 @@ target/release/examples/residual /tmp/coset12.bin 14  # step 3
 **optional: the full histogram.** steps 1–4 already settle god's number; this only splits the states that take 13 or 14, to complete the histogram below. after T = 12, a state whose upper bound is 13 is exactly 13, so only the 7,301,064 states with bounds of 14 or 15 are undecided. such a state is 13 iff some word of exactly 13 twists, ending with a twist outside phase 2, lands on it (a shorter seed plus phase 2 twists would already have bounded it by 13). `coset_next` enumerates those words in slices and records only the undecided states it hits: 4,315,080 are hit, so they take 13, and the other 2,985,984 take 14. 2.6e12 nodes, run as a 210-task Slurm array (8 cores each), about 55 min wall, 18.6 node-hours.
 
 ```
-target/release/examples/coset_next /tmp/coset12.bin 13 TASK NTASKS OUT  # one slice; union the OUTs
+target/release/examples/coset_next /tmp/coset12.bin 13 TASK NTASKS OUT          # one slice
+target/release/examples/merge_next /tmp/coset12.bin 13 tables/phase2-full.bin OUT...  # exact table
 ```
+
+`merge_next` writes the exact distance of every H state, one byte per P2 index, to `tables/phase2-full.bin` (gitignored, 102 MB).
 
 the symmetries: conjugate by any of the 16 sign flips, optionally composed with the x↔y swap, then rotate the whole puzzle to bring piece 0 back home. that maps H onto H and keeps STM. inversion doubles the group to 64. (the symmetries that fix slot 0 directly are just identity and x↔y.)
 
@@ -133,6 +133,14 @@ here's the exact histogram:
 | 12 | 37,801,616 |
 | 13 | 43,266,264 |
 | 14 | 2,985,984 |
+
+there are 2,985,984 antipodes, 47,216 up to symmetry and inversion. none keeps stickers of each axis in their axis, so there's no pattern like the reduced antipode's, and none has more than 4 of the 32 symmetries. instead, here are three that are nice in other ways. each log has an optimal 14 STM solution:
+
+![phase 2 full moveset antipodes](assets/antipode-p2-full.png)
+
+- **double antipode** ([log](assets/antipode-p2-full-double.hsc)): also an antipode under the reduced moveset, 21 STM. 64 positions are antipodes under both movesets, and they're all this one up to symmetry and inversion.
+- **5-cycle** ([log](assets/antipode-p2-full-5cycle.hsc)): moves only 5 pieces, in one cycle, the fewest of any antipode. up to symmetry it's the only one. 15 STM with the reduced moveset.
+- **4 swaps** ([log](assets/antipode-p2-full-swaps.hsc)): swaps 4 disjoint pairs of pieces, so it's its own inverse. 4 positions up to symmetry do this; this one is 16 STM with the reduced moveset.
 
 the combinatorial lower bound is 7 STM: the same positions as reduced phase 2, but with all 28 twists.
 
