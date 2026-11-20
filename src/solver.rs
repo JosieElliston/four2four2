@@ -379,14 +379,7 @@ impl Search<'_> {
                 grips.prefetch(cc[i][k]);
             }
         }
-        let surv = &mut surv[..n];
-        // Near the root, try children closest to solved first, so a good
-        // total is found sooner and prunes the rest. Deeper, the order no
-        // longer changes how many nodes are visited, and sorting just costs.
-        if g <= 2 {
-            surv.sort_unstable_by_key(|&i| dd[i as usize].iter().map(|&x| x as u32).sum::<u32>());
-        }
-        for &i in &*surv {
+        for &i in &surv[..n] {
             let i = i as usize;
             // the bound may have dropped in an earlier sibling's subtree
             let worst = *dd[i].iter().max().unwrap() as usize;

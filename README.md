@@ -84,8 +84,6 @@ the search is bound by phase 1 table loads, and finding that out took a load per
 
 ## move ordering
 
-near the root, children closest to solved (by the sum of the 4 distances) are tried first, so the best total can drop sooner. this is a wash so far: 25% fewer nodes on 10 scrambles, but the same number on 100. deeper, the order didn't change the node count at all, so sorting there would only cost.
-
 ## runtime
 
 the runtime in this chart is a bit funny bc a solve stops at the round where some oll target's phase 1 budget reaches one less than the best full solution found, so a depth 3 solve might have terminated at depth 2.
