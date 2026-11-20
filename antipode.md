@@ -92,7 +92,7 @@ god's number for phase 2 under the full moveset is 14 STM. the method is the one
 1. **enumerate excursions.** DFS with the full moveset from solved to H, up to T = 12 twists, pruned by the phase 1 table, keeping words that land in H and end with a twist outside the reduced moveset, taking the shortest word for each H state. 2.6e11 nodes, 21 min.
 2. **BFS over H.** start from those lengths and BFS with the reduced moveset. this gives a real solution (an upper bound) for all H states. 8 s.
 3. **the leftovers.** 75,584 states have an upper bound above 14. reduce them under the 64 symmetries that preserve H (below), get 2,262 orbits. run the optimal solver with `--max 14` on one state per orbit. all of them solve in at most 14. 5 min.
-4. **tightness.** the optimal solver finds states that take exactly 14, eg P2 index 110246436.
+4. **tightness.** some states take exactly 14: eg P2 index 209, where the optimal solver finds 14 and `--max 13` proves nothing shorter exists. (the optional step below finds all 2,985,984 of them.)
 
 TODO: log file
 TODO: screenshot
@@ -104,11 +104,17 @@ target/release/examples/coset 12 /tmp/coset12.bin     # steps 1 and 2
 target/release/examples/residual /tmp/coset12.bin 14  # step 3
 ```
 
+**optional: the full histogram.** steps 1–4 already settle god's number; this only splits the states that take 13 or 14, to complete the histogram below. after T = 12, a state whose upper bound is 13 is exactly 13, so only the 7,301,064 states with bounds of 14 or 15 are undecided. such a state is 13 iff some word of exactly 13 twists, ending with a twist outside phase 2, lands on it (a shorter seed plus phase 2 twists would already have bounded it by 13). `coset_next` enumerates those words in slices and records only the undecided states it hits: 4,315,080 are hit, so they take 13, and the other 2,985,984 take 14. 2.6e12 nodes, run as a 210-task Slurm array (8 cores each), about 55 min wall, 18.6 node-hours.
+
+```
+target/release/examples/coset_next /tmp/coset12.bin 13 TASK NTASKS OUT  # one slice; union the OUTs
+```
+
 the symmetries: conjugate by any of the 16 sign flips, optionally composed with the x↔y swap, then rotate the whole puzzle to bring piece 0 back home. that maps H onto H and keeps STM. inversion doubles the group to 64. (the symmetries that fix slot 0 directly are just identity and x↔y.)
 
 the cost grows about 10x per unit of T (T=11: 2 min, 1.28M leftovers). so T=12 plus solving the leftovers is much cheaper than T=14 alone, and also much cheaper than solving all 101.6M states one at a time.
 
-here's the exact histogram up to 12 STM. the remaining 46,252,268 states take 13 or 14, and splitting them needs T = 13 (about 3.5 h):
+here's the exact histogram:
 
 | STM | positions |
 |---|---|
@@ -125,6 +131,8 @@ here's the exact histogram up to 12 STM. the remaining 46,252,268 states take 13
 | 10 | 3,400,098 |
 | 11 | 13,026,096 |
 | 12 | 37,801,616 |
+| 13 | 43,266,264 |
+| 14 | 2,985,984 |
 
 the combinatorial lower bound is 7 STM: the same positions as reduced phase 2, but with all 28 twists.
 
