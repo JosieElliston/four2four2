@@ -12,8 +12,8 @@ use crate::table::{self, Mod3, Nibbles, child_distances};
 use crate::twist::{Twist, simplify};
 
 pub struct Tables {
-    p1: Mod3,
-    p2: Nibbles,
+    pub p1: Mod3,
+    pub p2: Nibbles,
 }
 
 /// Builds a table of exact distances by BFS from distance 0.
@@ -76,7 +76,7 @@ fn downhill<C: Coord>(
 }
 
 /// Exact phase 1 distance of `c`.
-fn p1_distance(tables: &Tables, mut c: P1) -> u8 {
+pub fn p1_distance(tables: &Tables, mut c: P1) -> u8 {
     let (t, goal) = (&tables.p1, P1::solved().index());
     let mut steps = 0;
     while c.index() != goal {
@@ -90,7 +90,7 @@ fn p1_distance(tables: &Tables, mut c: P1) -> u8 {
 
 /// Phase 2 distance of `c` if it's at most `max`. With `path`, also steps
 /// all the way down, pushing each move.
-fn p2_distance(
+pub fn p2_distance(
     tables: &Tables,
     mut c: P2,
     max: usize,

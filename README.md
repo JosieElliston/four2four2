@@ -52,7 +52,7 @@ consider all optimal paths to oll, then consider all optimal paths from each oll
 
 ie, at each state, consider all children states, get the min STM to finish the phase for each child from the LUT, and explore the children with that min STM.
 
-with this alg, phase 1 takes 8.12 STM, phase 2 takes 11.83 STM, adn the total solve takes 19.95 STM and 0.36 ms on average.
+with this alg, phase 1 takes 8.12 STM, phase 2 takes 11.83 STM, and the total solve takes 19.95 STM and 0.36 ms on average.
 
 ## cross phase search
 
