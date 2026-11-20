@@ -1,6 +1,6 @@
 # README
 
-this is a two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle.
+this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions see [antipode](antipode.md) for the exploration of god's number.
 
 ![solved](assets/solved.png)
 
@@ -34,9 +34,9 @@ we hold the all-positive piece (the corner on `εA εB ηA ηB`) fixed, and only
 
 - whole puzzle: 15!·2¹³ ≈ 1.07e16 positions.
 - phase 1, scrambled → oll: 105,431,040 cosets. this can be solved in at most 10 STM.
-- phase 2, oll → solved: 7!·8!/2 = 101,606,400 positions. we use the reduced moveset of 12 twists that preserve oll. this can be solved in at most 21 STM with the reduced moveset.
+- phase 2, oll → solved: 7!·8!/2 = 101,606,400 positions. we use the reduced moveset of 1 + 1 + 7 + 3 = 12 twists that preserve oll. this can be solved in at most 21 STM with the reduced moveset. (if you use the full moveset, many states get shorter, but these tend to be long states: no state taking <= 4 twists gets improved. as almost all of our nodes are in later rounds, which require states to be near solved for the bound to improve, the full moveset table would (empirically) reduce nodecount by under 1%)
 
-100k is small enough to store the complete depth lookuptables for each state.
+1e8 is small enough to store the complete depth [lookuptables](#tables) for each state.
 
 we also consider the four symmetries of oll: which ring, and whether to separate I/O or U/D.
 

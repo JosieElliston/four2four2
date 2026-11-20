@@ -27,7 +27,8 @@ enum Command {
         #[command(flatten)]
         search: SearchArgs,
     },
-    /// Solve random scrambles. Prints `stm phase1 phase2` per scramble.
+    /// Solve random scrambles. Prints `stm phase1 phase2` per scramble, or
+    /// `none proved|unproved` when `--max` finds nothing.
     Bench {
         /// Number of scrambles.
         #[arg(short, default_value_t = 100)]
@@ -45,6 +46,10 @@ struct SearchArgs {
     /// instead of searching until the solution is optimal.
     #[arg(long)]
     depth: Option<u8>,
+    /// Stop at the first solution of at most this many twists (STM), and
+    /// report whether one exists if none is found.
+    #[arg(long)]
+    max: Option<usize>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,7 +70,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.apply_all(&scramble);
 
             let t0 = Instant::now();
-            let sol = solver::solve(&tables, &state, search.depth);
+            let sol = match solver::solve(&tables, &state, search.depth, search.max) {
+                Ok(sol) => sol,
+                Err(e) => {
+                    let max = search.max.unwrap();
+                    return Err(if e.proved {
+                        format!("no solution of at most {max} twists exists")
+                    } else {
+                        format!("no solution of at most {max} twists within --depth")
+                    }
+                    .into());
+                }
+            };
             let twists = sol.twists();
             eprintln!(
                 "stm {} ({} + {}, target {}) in {:.1?}",
@@ -84,23 +100,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let t0 = Instant::now();
             let mut total = 0;
+            let mut solved = 0;
             let mut nodes = 0;
             for _ in 0..n {
                 let mut state = State::solved();
                 for _ in 0..1000 {
                     state.apply(all[rng.random_range(0..all.len())]);
                 }
-                let sol = solver::solve(&tables, &state, search.depth);
+                let sol = match solver::solve(&tables, &state, search.depth, search.max) {
+                    Ok(sol) => sol,
+                    Err(e) => {
+                        nodes += e.nodes;
+                        println!("none {}", if e.proved { "proved" } else { "unproved" });
+                        continue;
+                    }
+                };
                 state.apply_all(&sol.twists());
                 assert!(state.is_solved());
                 let stm = hsc_stm(&sol.twists());
                 total += stm;
+                solved += 1;
                 nodes += sol.nodes;
                 println!("{stm} {} {}", sol.phase1.len(), sol.phase2.len());
             }
             eprintln!(
-                "mean stm {:.2} over {n} scrambles, {:.1?} per solve, {:.3e} nodes per solve",
-                total as f64 / n as f64,
+                "mean stm {:.2} over {solved} of {n} scrambles solved, {:.1?} per solve, {:.3e} nodes per solve",
+                total as f64 / solved.max(1) as f64,
                 t0.elapsed() / n.max(1) as u32,
                 nodes as f64 / n.max(1) as f64,
             );

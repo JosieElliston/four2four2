@@ -39,7 +39,7 @@ fn solver_solves_log_scramble() {
     let tables = Tables::load_or_build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tables"));
     let mut state = State::solved();
     state.apply_all(&hsc::parse(LOG).unwrap().scramble);
-    let sol = solve(&tables, &state, None);
+    let sol = solve(&tables, &state, None, None).unwrap();
     state.apply_all(&sol.twists());
     assert!(state.is_solved());
     // the optimal length, as the search proved when this was written

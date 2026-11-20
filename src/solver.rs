@@ -200,11 +200,15 @@ struct Search<'a> {
     best: Option<Best>,
     path: Vec<Twist>,
     nodes: u64,
+    /// Only totals below this are wanted.
+    limit: usize,
+    /// Stop at the first solution found.
+    first: bool,
 }
 
 impl Search<'_> {
     fn bound(&self) -> usize {
-        self.best.as_ref().map_or(usize::MAX, |b| b.total)
+        self.best.as_ref().map_or(self.limit, |b| b.total)
     }
 
     /// A finished phase 1 for target `k`: finish with phase 2.
@@ -263,6 +267,9 @@ impl Search<'_> {
     /// `c[k]` is the phase 1 coordinate seen through target symmetry `k`,
     /// `d[k]` its distance. `p2` holds the pieces in the normalized frame.
     fn dfs(&mut self, c: [P1; 4], d: [u8; 4], p2: P2) {
+        if self.first && self.best.is_some() {
+            return;
+        }
         self.nodes += 1;
         let g = self.path.len();
         for (k, &dk) in d.iter().enumerate() {
@@ -305,11 +312,30 @@ impl Search<'_> {
     }
 }
 
+/// No solution of at most the requested length was found.
+#[derive(Clone, Debug)]
+pub struct NoSolution {
+    /// Every phase 1 length up to the limit was searched, so none exists.
+    /// False when `depth` ran out first.
+    pub proved: bool,
+    pub nodes: u64,
+}
+
 /// Solves `state`, trying every phase 1 up to `depth` twists longer than
 /// optimal for each oll target, and keeping the shortest total. With no
 /// `depth`, searches until the total is optimal. Twists in the result are in
 /// the frame of `state`.
-pub fn solve(tables: &Tables, state: &State, depth: Option<u8>) -> Solution {
+///
+/// With `max`, only solutions of at most `max` twists count, and the search
+/// stops at the first one found (so it need not be optimal). Twist counts here
+/// are before merging across the phase boundary, so the returned solution's
+/// STM may be lower still. Without `max`, there is always a solution.
+pub fn solve(
+    tables: &Tables,
+    state: &State,
+    depth: Option<u8>,
+    max: Option<usize>,
+) -> Result<Solution, NoSolution> {
     let frames = &*FRAMES;
     // rotate piece 0 home; the search works in that frame
     let rot = coord::normalizing_rotation(state);
@@ -323,21 +349,34 @@ pub fn solve(tables: &Tables, state: &State, depth: Option<u8>) -> Solution {
         best: None,
         path: vec![],
         nodes: 0,
+        limit: max.map_or(usize::MAX, |m| m + 1),
+        first: max.is_some(),
     };
     // shortest phase 1 lengths first, so good totals prune the longer rounds
+    let mut proved = false;
     for extra in 0..=depth.unwrap_or(u8::MAX) {
         search.budget = d.map(|x| x.saturating_add(extra));
         // A round only finds totals of at least its smallest budget. Once
-        // that reaches the best total, no longer phase 1 can help, and since
-        // solved is in every target, every solution shorter than the best
-        // would have been found as a phase 1 alone: the best is optimal.
+        // that reaches the bound (the best total, or `max + 1`), no longer
+        // phase 1 can help, and since solved is in every target, every
+        // solution below the bound would have been found as a phase 1 alone:
+        // the best is optimal, or there is none within `max`.
         if search.budget.iter().all(|&b| b as usize >= search.bound()) {
+            proved = true;
             break;
         }
         search.dfs(c, d, P2::from_state(&s));
+        if search.first && search.best.is_some() {
+            break;
+        }
     }
 
-    let best = search.best.expect("no solution found");
+    let Some(best) = search.best else {
+        return Err(NoSolution {
+            proved,
+            nodes: search.nodes,
+        });
+    };
     let k = best.target;
     let unsym = frames.syms[k].inverse();
     let mut phase2 = vec![];
@@ -350,10 +389,10 @@ pub fn solve(tables: &Tables, state: &State, depth: Option<u8>) -> Solution {
 
     let back = rot.inverse();
     let to_original = |ts: &[Twist]| ts.iter().map(|t| t.conjugated(back)).collect();
-    Solution {
+    Ok(Solution {
         phase1: to_original(&best.phase1),
         phase2: to_original(&phase2),
         target: k,
         nodes: search.nodes,
-    }
+    })
 }
