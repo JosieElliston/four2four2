@@ -113,6 +113,13 @@ def main() -> None:
             ]
             strip(frames, list(steps)).save(ASSETS / f"{name}.png", optimize=True)
 
+        # A phase 1 antipode (10 STM to oll), drawn before its solution.
+        log = tmp / "antipode-p1.hsc"
+        subprocess.run([ROOT / "target/release/port-log", ASSETS / "antipode-p1.hsc", log], check=True)
+        render(ASSETS / "draw/unfiltered.yaml", tmp / "antipode-p1.png", str(log), "--action", "0").save(
+            ASSETS / "antipode-p1.png", optimize=True
+        )
+
         # A phase 2 antipode (21 STM in the reduced moveset), drawn before its solution.
         log = tmp / "antipode-p2.hsc"
         subprocess.run([ROOT / "target/release/port-log", ASSETS / "antipode-p2.hsc", log], check=True)

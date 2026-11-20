@@ -1,6 +1,6 @@
 # antipodes / god's number
 
-we fully understand each of the phases; we have bounds for the full puzzle
+we fully understand each of the phases; we have bounds for the full puzzle.
 
 ## phase 1
 
@@ -22,21 +22,11 @@ god's number for phase 1 is 10 STM, taken from the pruning table. here's the (ex
 
 with mean 7.95 STM.
 
-and here's an example of an antipode, chosen for having a nice solution, alternating `ε`-cell twists and `ηD_εA_εD`:
+the nicest antipode is [solved except for two pieces twisted in place](assets/antipode-p1.hsc):
 
-```
-εC_εD ηD_εA_εD
-εD_εC ηD_εA_εD
-εC_εD ηD_εA_εD
-εC_εD ηD_εA_εD
-εD_εA εD_εA ηD_εA_εD
-```
+![phase 1 antipode](assets/antipode-p1.png)
 
-TODO: invert the solution so it's `ηD_εA_εD` alternating with `ε` and the `ηD_εA_εD` line up
-also research with grabbing all optimal solutions, i don't like `εD_εA εD_εA` is duplicated
-
-TODO: log file
-TODO: screenshot
+each twisted piece swaps its `I`/`O` sticker with its `U`/`D` sticker, and its `R`/`L` sticker with its `F`/`B` sticker. that's the only twist in place that can be applied to some pieces but not all; one twisted piece alone is unreachable. the two pieces differ in exactly their `I`/`O` and `U`/`D` coordinates, so one is on `I` and one on `O`; pairs on the same side reach only 9. up to symmetry, it's the only two-piece antipode. solving it fully takes 14 STM.
 
 the combinatorial lower bound is 7 STM: 1.05e8 positions.
 
