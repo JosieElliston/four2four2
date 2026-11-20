@@ -1,6 +1,6 @@
 # antipodes / god's number
 
-we fully understand each of the phases; we have bounds for the full puzzle.
+we fully understand each of the phases; we have bounds for the full puzzle: at least 16 STM, at most 24.
 
 ## phase 1
 
@@ -150,5 +150,12 @@ the exact phase 2 histogram above shows how much this underestimates: counting g
 
 god's number for the two phases gives an upper bound for the full puzzle of 10 + 14 = 24 STM.
 
-TODO: try the phase 2 antipode to improve the combinatorial lower bound
-TODO: try the antipode alg from discord
+### a 16 STM position
+
+god's number for the full puzzle is at least 16 STM: [behold](assets/antipode-full.hsc):
+
+![full puzzle 16 STM position](assets/antipode-full.png)
+
+it's solved except for 10 pieces twisted in place, with the same twist as the phase 1 antipode. the 6 untwisted pieces are one piece, the piece opposite it in all four coordinates, and 4 of the 6 pieces that differ from it in exactly two coordinates. it keeps 16 of the puzzle's 128 symmetries (the 16 sign flips, times the 8 axis permutations that keep each ring's two axes together).
+
+it came from a search of every reachable position that's solved except for pieces with that twist: 432 up to symmetry. 327 solve in at most 14, 103 take exactly 15, and 2 take 16. this is the more symmetric of the two; the other keeps only 8 symmetries. these are only candidates for antipodes; positions outside this family may be farther.

@@ -135,6 +135,13 @@ def main() -> None:
             frames.append(render(ASSETS / "draw/unfiltered.yaml", tmp / f"{log.stem}.png", str(log), "--action", "0"))
         strip(frames, list(FULL_ANTIPODES.values())).save(ASSETS / "antipode-p2-full.png", optimize=True)
 
+        # A full-puzzle position that takes 16 STM, drawn before its solution.
+        log = tmp / "antipode-full.hsc"
+        subprocess.run([ROOT / "target/release/port-log", ASSETS / log.name, log], check=True)
+        render(ASSETS / "draw/unfiltered.yaml", tmp / "antipode-full.png", str(log), "--action", "0").save(
+            ASSETS / "antipode-full.png", optimize=True
+        )
+
 
 if __name__ == "__main__":
     main()
