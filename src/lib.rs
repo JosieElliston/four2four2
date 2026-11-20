@@ -3,6 +3,7 @@
 
 pub mod coord;
 pub mod geom;
+pub mod grips;
 pub mod hsc;
 pub mod solver;
 pub mod state;

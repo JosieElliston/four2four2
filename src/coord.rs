@@ -330,11 +330,33 @@ impl P1 {
         (self.0 >> 16) as u16
     }
 
+    /// The position mirrored across x = y: slots whose index bits 0 and 1
+    /// are 1, 0 trade with those where they're 0, 1, in both masks. This
+    /// fixes slot 0 and keeps the oll target.
+    #[inline]
+    pub fn swap_xy(self) -> Self {
+        // slots 1, 5, 9, 13, in both masks
+        let t = (self.0 >> 1 ^ self.0) & 0x2222_2222;
+        P1(self.0 ^ t ^ t << 1)
+    }
+
+    /// Rank of the O-mask, `index() / P1_ORI`.
+    #[inline]
+    pub fn sep(self) -> usize {
+        sep_rank(self.0 >> 1 & 0x7FFF) as usize
+    }
+
+    /// The orientation part, `index() % P1_ORI`.
+    #[inline]
+    pub fn ori_index(self) -> usize {
+        (self.0 >> 17 & 0x3FFF) as usize
+    }
+
     #[inline]
     pub fn index(self) -> usize {
         debug_assert_eq!(self.o().count_ones(), 8);
         debug_assert!(self.ori().count_ones().is_multiple_of(2));
-        sep_rank(self.0 >> 1 & 0x7FFF) as usize * P1_ORI + (self.0 >> 17 & 0x3FFF) as usize
+        self.sep() * P1_ORI + self.ori_index()
     }
 
     pub fn from_index(i: usize) -> Self {

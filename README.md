@@ -1,6 +1,6 @@
 # README
 
-this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions of ~14 STM in ~5 s. see [antipode](antipode.md) for the exploration of god's number.
+this is a optimal two phase solver for the {4}x{4} 2x2 duoprism twisty puzzle. it finds optimal solutions of ~14 STM in ~2 s. see [antipode](antipode.md) for the exploration of god's number.
 
 ![solved](assets/solved.png)
 
@@ -78,7 +78,13 @@ once some target's phase 1 budget reaches `best - 1`, that budget never prunes a
 
 ## fewer loads
 
-the search is bound by phase 1 table loads, about 4 per child. most children are pruned by a single target, so each node first loads only the target with the largest distance for every child, then the other three only for the children that survive.
+almost all of an optimal solve is in rounds where phase 2 has to be at most 1 or 2 twists. there, a phase 1 almost never finishes, so phase 2 barely matters: the search is just looking for a whole solution under the bound. most nodes have no slack (`depth + max distance = best - 1`), so a child has to lower every target tied for the max at once, and usually none can. on 37d82c3 (10 optimal solves, seed 0), 87% of nodes had no slack, and when 2 or more targets were tied, 90–99% of those had no surviving child.
+
+the search is bound by phase 1 table loads, and finding that out took a load per child per target. instead, the [grip table](#phase-1-grips) gives each target's lowering and raising twists in one load, so a node gets every child's distance from 4 loads that don't depend on each other. the surviving children's entries are prefetched before recursing.
+
+## move ordering
+
+near the root, children closest to solved (by the sum of the 4 distances) are tried first, so the best total can drop sooner. this is a wash so far: 25% fewer nodes on 10 scrambles, but the same number on 100. deeper, the order didn't change the node count at all, so sorting there would only cost.
 
 ## runtime
 
@@ -86,11 +92,11 @@ the runtime in this chart is a bit funny bc a solve stops at the round where som
 
 | `--depth` | n | phase 1 STM | phase 2 STM | total STM | range | time |
 |---|---|---|---|---|---|---|
-| 0 | 1000 | 8.14 | 11.82 | 19.95 | 14–24 | 0.30 ms |
-| 1 | 1000 | 9.00 | 8.82 | 17.82 | 12–21 | 7.6 ms |
-| 2 | 1000 | 9.94 | 6.20 | 16.14 | 12–20 | 94 ms |
-| 3 | 1000 | 10.85 | 4.10 | 14.95 | 12–17 | 0.65 s |
-| optimal | 100 | 11.69 | 2.26 | 13.95 | 12–15 | 5.4 s |
+| 0 | 1000 | 8.10 | 11.85 | 19.95 | 14–24 | 0.27 ms |
+| 1 | 1000 | 8.99 | 8.83 | 17.82 | 12–21 | 6.2 ms |
+| 2 | 1000 | 9.93 | 6.21 | 16.14 | 12–20 | 71 ms |
+| 3 | 1000 | 10.85 | 4.10 | 14.95 | 12–17 | 0.41 s |
+| optimal | 100 | 11.70 | 2.25 | 13.95 | 12–15 | 2.1 s |
 
 measured with `bench -n N --seed 0` on an apple m5.
 
@@ -112,7 +118,17 @@ that's 6435 · 2¹⁴ = 105,431,040 entries, all reachable.
 
 in the search, the coordinate is both masks, indexed by slot, packed into one `u32`. a twist moves its cell's 8 slots by a signed permutation of the axes, which on slot indices is an xor and a permutation of index bits. each of those is one delta swap on a slot mask, so every twist is 2 delta swaps (plus an xor of the ori-mask when z and w trade places). twisting needs no move table, and one swap moves both masks.
 
-each entry is the distance mod 3, in 2 bits, for 26 MB. that's enough because the search always knows the parent's exact distance, and a child's differs from it by at most 1.
+each entry is the distance mod 3, in 2 bits, for 26 MB. that's enough when the parent's exact distance is known, since a child's differs from it by at most 1. the search itself uses the grip table below, which is built from this one.
+
+## phase 1 grips
+
+for each phase 1 key, which twists lower the distance and which raise it.
+
+a cell's 8 rotations (the identity and its 7 twists) form a group, so the 8 positions they reach from a position are pairwise one twist apart, and their distances take at most two adjacent values. so a cell never has both a lowering and a raising twist, and one byte per cell says which of the 8 are at the higher value (bit 0 for the position itself). all 255 patterns occur (256 bytes, but all-low and all-high both mean no change).
+
+the x ↔ y mirror fixes slot 0 and the target, so a position's entry is its mirror's with the twists mirrored. only one O-mask of each mirror pair is stored: 3379 of the 6435 (the mirror fixes 323). that's 3379 · 2¹⁴ keys at 4 bytes, for 221 MB. which of a position and its mirror is stored is a coin flip that decides the load's address, so it's picked without a branch; with a branch, solves took 1.8× as long.
+
+small lookup tables decode the bytes and remap them from each target's frame into one shared numbering of the 28 twists. bit twiddling also works (each frame only permutes the cells, and maybe reverses the quarter-turn direction within them), but it was ~13% slower, from a longer chain of dependent operations after the load.
 
 ## phase 2: oll → solved
 
@@ -128,7 +144,7 @@ the search tracks where the pieces go during phase 1, so it can form this key at
 
 ## building
 
-both tables are built by a parallel breadth-first search with a byte per entry, then packed and cached in `tables/`. phase 1 takes 8 s and phase 2 takes 11 s.
+both tables are built by a parallel breadth-first search with a byte per entry, then packed and cached in `tables/`. phase 1 takes 8 s and phase 2 takes 11 s, then the grip table takes 1 s. a first build peaks at ~490 MB, and solving needs ~300 MB.
 
 # usage
 

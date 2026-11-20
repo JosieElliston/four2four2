@@ -11,7 +11,7 @@ use four2four2::{hsc, state::State};
 #[derive(Parser)]
 #[command(about = "Two-phase solver for the {4}x{4} 2x2 duoprism (Hyperspeedcube 2)")]
 struct Cli {
-    /// Where the lookup tables are cached (built on first use, ~77 MB).
+    /// Where the lookup tables are cached (built on first use; solving needs ~300 MB).
     #[arg(long, global = true, default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/tables"))]
     tables: PathBuf,
     #[command(subcommand)]

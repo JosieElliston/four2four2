@@ -7,12 +7,15 @@ use std::sync::LazyLock;
 
 use crate::coord::{self, Coord, P1, P1Move, P2, PHASE1_MOVES, PHASE2_MOVES, SlotMove};
 use crate::geom::Rot;
+use crate::grips::{self, Grips};
 use crate::state::State;
-use crate::table::{self, Mod3, Nibbles, child_distances};
+use crate::table::{self, Mod3, Nibbles};
 use crate::twist::{Twist, simplify};
 
 pub struct Tables {
     pub p1: Mod3,
+    /// Built from `p1`; what the search uses.
+    pub grips: Grips,
     pub p2: Nibbles,
 }
 
@@ -47,8 +50,12 @@ impl Tables {
                     .to_vec()
             },
         );
-        let (p1, p2) = (Mod3::from_bytes(p1), Nibbles::from_bytes(p2));
-        Tables { p1, p2 }
+        let p1 = Mod3::from_bytes(p1);
+        let grips = table::load_or_build(&dir.join("phase1-grips.bin"), grips::LEN, || {
+            Grips::build(&p1)
+        });
+        let (grips, p2) = (Grips::from_bytes(grips), Nibbles::from_bytes(p2));
+        Tables { p1, grips, p2 }
     }
 }
 
@@ -152,19 +159,77 @@ struct Frames {
     slot: [[u8; 16]; 4],
     /// `moves[i][k]`: move `i` of [`PHASE1_MOVES`] seen through symmetry `k`.
     moves: [[P1Move; 4]; 28],
+    /// `decode[k][m][cell][byte]`: a [`Grips`] entry byte, for a coordinate
+    /// seen through symmetry `k` (and stored as its mirror if `m`), as masks
+    /// of the moves `i` that lower (bit `i`) or raise (bit `32 + i`) the
+    /// distance.
+    decode: Box<[[[[u64; 256]; 4]; 2]; 4]>,
+}
+
+impl Frames {
+    /// Lowering and raising moves of a coordinate seen through symmetry `k`,
+    /// from its [`Grips`] entry.
+    #[inline]
+    fn masks(&self, k: usize, (e, mirrored): (u32, bool)) -> (u32, u32) {
+        let t = &self.decode[k][mirrored as usize];
+        let m = t[0][(e & 0xff) as usize]
+            | t[1][(e >> 8 & 0xff) as usize]
+            | t[2][(e >> 16 & 0xff) as usize]
+            | t[3][(e >> 24) as usize];
+        (m as u32, (m >> 32) as u32)
+    }
 }
 
 static FRAMES: LazyLock<Frames> = LazyLock::new(|| {
     let syms = target_symmetries();
     let slot =
         syms.map(|r| std::array::from_fn(|p| coord::slot_of(r.apply(coord::coords_of(p))) as u8));
-    let moves = std::array::from_fn(|i| {
-        syms.map(|r| {
-            let t = PHASE1_MOVES[i].twist.conjugated(r);
-            PHASE1_MOVES.iter().find(|n| n.twist == t).unwrap().p1
-        })
-    });
-    Frames { syms, slot, moves }
+    let find = |t: Twist| PHASE1_MOVES.iter().position(|n| n.twist == t).unwrap();
+    // `table[i][k]`: move `i` seen through symmetry `k`, as a move index
+    let table: [[usize; 4]; 28] =
+        std::array::from_fn(|i| syms.map(|r| find(PHASE1_MOVES[i].twist.conjugated(r))));
+    let moves = table.map(|t| t.map(|j| PHASE1_MOVES[j].p1));
+    let mirror = grips::mirror();
+    let mirrored: [usize; 28] =
+        std::array::from_fn(|j| find(PHASE1_MOVES[j].twist.conjugated(mirror)));
+    // `shared[k][j]`: the move that symmetry `k` sees as move `j`
+    let mut shared = [[0; 28]; 4];
+    for (i, t) in table.iter().enumerate() {
+        for k in 0..4 {
+            shared[k][t[k]] = i;
+        }
+    }
+    let mut decode = Box::new([[[[0; 256]; 4]; 2]; 4]);
+    for k in 0..4 {
+        for m in 0..2 {
+            for cell in 0..4 {
+                for byte in 0..256 {
+                    let high = byte & 1 == 1;
+                    let mut out = 0u64;
+                    for t in 0..7 {
+                        // the stored move, the coordinate's own move, then the
+                        // shared move seen through `k` as that
+                        let stored = 7 * cell + t;
+                        let own = if m == 1 { mirrored[stored] } else { stored };
+                        let i = shared[k][own];
+                        let other = byte >> (1 + t) & 1 == 1;
+                        if high && !other {
+                            out |= 1 << i;
+                        } else if !high && other {
+                            out |= 1 << (32 + i);
+                        }
+                    }
+                    decode[k][m][cell][byte] = out;
+                }
+            }
+        }
+    }
+    Frames {
+        syms,
+        slot,
+        moves,
+        decode,
+    }
 });
 
 #[derive(Clone, Debug)]
@@ -262,56 +327,66 @@ impl Search<'_> {
         }
         // Two twists of one cell are one twist, which is tried on its own, so
         // skip the last twist's cell. PHASE1_MOVES is grouped by cell, 7 each.
-        let skip = self.path.last().map_or(0..0, |t| {
+        let skip: u32 = self.path.last().map_or(0, |t| {
             let s = PHASE1_MOVES
                 .iter()
                 .position(|m| m.twist.cell() == t.cell())
                 .unwrap();
-            s..s + 7
+            0x7f << s
         });
         // Solved is in every target, so reaching it takes at least the
-        // largest phase 1 distance. The search is bound by table loads, so
-        // children are loaded in two passes: first the target with the largest
-        // distance here, which alone prunes most children, then the other
-        // three only for the children it didn't prune. Each pass's loads are
-        // issued with no branches on them, letting them overlap.
-        let moves = &FRAMES.moves;
-        let p1 = &self.tables.p1;
-        let decode = d.map(child_distances);
-        let kp = (0..4).max_by_key(|&k| d[k]).unwrap();
-        let bound = self.bound();
+        // largest phase 1 distance: a child is only worth visiting if every
+        // target's distance is at most `room`.
+        let Some(room) = self.bound().checked_sub(g + 2) else {
+            return;
+        };
+        // The search is bound by table loads. One grip entry per target gives
+        // every child's distance, and the four loads don't depend on each
+        // other, so they overlap.
+        let frames = &*FRAMES;
+        let grips = &self.tables.grips;
+        let mut lower = [0; 4];
+        let mut raise = [0; 4];
+        let mut bad = skip;
+        for k in 0..4 {
+            (lower[k], raise[k]) = frames.masks(k, grips.get(c[k]));
+            // a target just above `room` has to go down, and one at it can't
+            // go up (further above only happens at the root, under `max`)
+            let dk = d[k] as usize;
+            if dk > room + 1 {
+                return;
+            } else if dk == room + 1 {
+                bad |= !lower[k];
+            } else if dk == room {
+                bad |= raise[k];
+            }
+        }
         let mut cc = [[P1::solved(); 4]; 28];
         let mut dd = [[0u8; 4]; 28];
-        // pass 1, in its own contiguous arrays
-        let mut pc = [P1::solved(); 28];
-        let mut pi = [0; 28];
-        for i in 0..28 {
-            pc[i] = c[kp].apply_p1(&moves[i][kp]);
-            pi[i] = pc[i].index();
-        }
-        for i in 0..28 {
-            dd[i][kp] = decode[kp][p1.get(pi[i]) as usize];
-            cc[i][kp] = pc[i];
-        }
         let mut surv = [0u8; 28];
         let mut n = 0;
-        for i in 0..28 {
+        let mut ok = !bad & ((1 << 28) - 1);
+        while ok != 0 {
+            let i = ok.trailing_zeros() as usize;
+            ok &= ok - 1;
             surv[n] = i as u8;
-            n += (!skip.contains(&i) && g + 1 + (dd[i][kp] as usize) < bound) as usize;
-        }
-        let surv = &surv[..n];
-        // pass 2
-        for &i in surv {
-            for k in (0..4).filter(|&k| k != kp) {
-                cc[i as usize][k] = c[k].apply_p1(&moves[i as usize][k]);
+            n += 1;
+            for k in 0..4 {
+                cc[i][k] = c[k].apply_p1(&frames.moves[i][k]);
+                dd[i][k] = d[k] + (raise[k] >> i & 1) as u8 - (lower[k] >> i & 1) as u8;
+                // each child's recursion starts by loading its entries; start
+                // them all now, so they overlap
+                grips.prefetch(cc[i][k]);
             }
         }
-        for &i in surv {
-            for k in (0..4).filter(|&k| k != kp) {
-                dd[i as usize][k] = decode[k][p1.get(cc[i as usize][k].index()) as usize];
-            }
+        let surv = &mut surv[..n];
+        // Near the root, try children closest to solved first, so a good
+        // total is found sooner and prunes the rest. Deeper, the order no
+        // longer changes how many nodes are visited, and sorting just costs.
+        if g <= 2 {
+            surv.sort_unstable_by_key(|&i| dd[i as usize].iter().map(|&x| x as u32).sum::<u32>());
         }
-        for &i in surv {
+        for &i in &*surv {
             let i = i as usize;
             // the bound may have dropped in an earlier sibling's subtree
             let worst = *dd[i].iter().max().unwrap() as usize;
@@ -422,4 +497,39 @@ pub fn solve(
         target: k,
         nodes: search.nodes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The grip table, decoded through each target symmetry, agrees with the
+    /// mod-3 table on every child. Needs the tables.
+    #[test]
+    #[ignore]
+    fn grip_masks_match_mod3() {
+        let tables = Tables::load_or_build(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tables"));
+        let (frames, p1) = (&*FRAMES, &tables.p1);
+        let all = Twist::all();
+        let mut s = State::solved();
+        let mut mirrored = [0; 2];
+        for n in 0..3000 {
+            s.apply(all[(n * 37 + 11) % all.len()]);
+            let s = s.rotated(coord::normalizing_rotation(&s));
+            for k in 0..4 {
+                let c = P1::from_state(&s.conjugated(frames.syms[k]));
+                let entry = tables.grips.get(c);
+                mirrored[entry.1 as usize] += 1;
+                let (lower, raise) = frames.masks(k, entry);
+                let v = p1.get(c.index());
+                for i in 0..28 {
+                    let w = p1.get(c.apply_p1(&frames.moves[i][k]).index());
+                    assert_eq!(lower >> i & 1 == 1, w == (v + 2) % 3, "lower {n} {k} {i}");
+                    assert_eq!(raise >> i & 1 == 1, w == (v + 1) % 3, "raise {n} {k} {i}");
+                }
+            }
+        }
+        // both halves of the mirror were exercised
+        assert!(mirrored.iter().all(|&m| m > 1000), "{mirrored:?}");
+    }
 }

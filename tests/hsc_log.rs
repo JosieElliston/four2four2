@@ -31,7 +31,7 @@ fn rewritten_log_round_trips() {
 }
 
 /// Builds (or loads) the full tables, so it's slow the first time and needs
-/// ~420 MB. Run with `cargo test --release -- --ignored`.
+/// ~490 MB while building. Run with `cargo test --release -- --ignored`.
 #[test]
 #[ignore]
 fn solver_solves_log_scramble() {
