@@ -138,7 +138,21 @@ the combinatorial lower bound is 7 STM: the same positions as reduced phase 2, b
 
 ### empirically
 
-here's the histogram of the optimal STM for TODO:number random states:
+here's the histogram of the optimal STM for 100,000 random states (1000 random twists each):
+
+| STM | positions |
+|---|---|
+| 9 | 1 |
+| 10 | 3 |
+| 11 | 84 |
+| 12 | 1,212 |
+| 13 | 13,915 |
+| 14 | 70,906 |
+| 15 | 13,879 |
+
+with mean 13.97 STM. none took 16 (the farthest known, below).
+
+it's `cargo run --release --example histogram 500 SEED` for seeds 1–200, summed (on 867c0a7, as a 200-task Slurm array of 8 cores each, about 2.5 h wall).
 
 ### analytically
 
