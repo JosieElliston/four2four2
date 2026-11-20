@@ -138,7 +138,7 @@ the combinatorial lower bound is 7 STM: the same positions as reduced phase 2, b
 
 ### empirically
 
-here's the histogram of the optimal STM for 100,000 random states (1000 random twists each):
+here's the histogram of the optimal STM for 100,000 random states:
 
 | STM | positions |
 |---|---|
@@ -150,7 +150,7 @@ here's the histogram of the optimal STM for 100,000 random states (1000 random t
 | 14 | 70,906 |
 | 15 | 13,879 |
 
-with mean 13.97 STM. none took 16 (the farthest known, below).
+with mean 13.97 STM. none took 16, even such states do exist.
 
 it's `cargo run --release --example histogram 500 SEED` for seeds 1–200, summed (on 867c0a7, as a 200-task Slurm array of 8 cores each, about 2.5 h wall).
 
@@ -166,7 +166,7 @@ god's number for the two phases gives an upper bound for the full puzzle of 10 +
 
 ### a 16 STM position
 
-god's number for the full puzzle is at least 16 STM: [behold](assets/antipode-full.hsc):
+god's number for the full puzzle is at least 16 STM. [behold](assets/antipode-full.hsc):
 
 ![full puzzle 16 STM position](assets/antipode-full.png)
 
